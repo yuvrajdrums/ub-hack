@@ -43,11 +43,16 @@ export interface CalibrationRanges {
 
 /** Demonstration references only. Does not prescribe a clinical range. */
 export function deriveCalibration(startAngleDeg: number, targetAngleDeg: number,
-  options: { toleranceDeg?: number; minimumSeparationDeg?: number } = {}): CalibrationRanges | null {
+  options: { toleranceDeg?: number; targetApproachToleranceDeg?: number; minimumSeparationDeg?: number } = {}): CalibrationRanges | null {
   const tolerance = options.toleranceDeg ?? 6;
-  if (![startAngleDeg, targetAngleDeg, tolerance].every(Number.isFinite) || tolerance <= 0 ||
+  const targetApproachTolerance = options.targetApproachToleranceDeg ?? 20;
+  if (![startAngleDeg, targetAngleDeg, tolerance, targetApproachTolerance].every(Number.isFinite) || tolerance <= 0 || targetApproachTolerance <= 0 ||
     startAngleDeg < 0 || startAngleDeg > 180 || targetAngleDeg < 0 || targetAngleDeg > 180 ||
     Math.abs(targetAngleDeg - startAngleDeg) < Math.max(options.minimumSeparationDeg ?? 15, tolerance * 2 + 1)) return null;
   const range = (value: number): [number, number] => [Math.max(0, value - tolerance), Math.min(180, value + tolerance)];
-  return { startAngleDeg, targetAngleDeg, startRangeDeg: range(startAngleDeg), targetRangeDeg: range(targetAngleDeg) };
+  const startRangeDeg=range(startAngleDeg);
+  const targetRangeDeg: [number,number]=targetAngleDeg>startAngleDeg
+    ? [Math.max(targetAngleDeg-targetApproachTolerance,startRangeDeg[1]+3),Math.min(180,targetAngleDeg+tolerance)]
+    : [Math.max(0,targetAngleDeg-tolerance),Math.min(targetAngleDeg+targetApproachTolerance,startRangeDeg[0]-3)];
+  return { startAngleDeg, targetAngleDeg, startRangeDeg, targetRangeDeg };
 }
