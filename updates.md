@@ -74,3 +74,4 @@
 - 2026-11-08 01:08:07 -05:00 — Added a half-preview-width live hold overlay with elapsed/target time, phase label and progress; guided hold duration stays visible when paused or confirmed. Typecheck and all three production builds passed; preparing the Cloudflare release.
 - 2026-11-08 01:09:34 -05:00 — Deployed the timer UI to Cloudflare Worker version `2534683d-f4c4-4d71-a653-9302f7bbd56a`; verified page/context 200 and the timer JS/CSS assets are published.
 - 2026-11-08 01:22:01 -05:00 — Updated the camera timer to display 0.2s at the first target-range frame with a “Stabilizing target” label while preserving the engine's 200ms confirmation dwell. Typecheck and all three production builds passed.
+- 2026-11-08 01:23:06 -05:00 — Deployed the immediate 0.2s hold display to Cloudflare Worker version `d2eeab09-5f26-494c-8341-a06ae17e3f75`; verified page/context 200 and published timer/stabilization code.
