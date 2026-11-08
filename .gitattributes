@@ -1,0 +1,3 @@
+apps/rehab/public/mediapipe/* -text
+*.wasm binary
+*.task binary

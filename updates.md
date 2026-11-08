@@ -5,3 +5,16 @@
 - 2026-11-07 22:16:30 -05:00 — Two-minute recovery checkpoint 20261108T031630Z: 3 changed/new files snapshotted; HEAD caf4743.
 
 - 2026-11-07 22:18:31 -05:00 — Two-minute recovery checkpoint 20261108T031831Z: 16 changed/new files snapshotted; HEAD caf4743.
+
+- 2026-11-07 22:20:31 -05:00 — Two-minute recovery checkpoint 20261108T032031Z: 28 changed/new files snapshotted; HEAD 25dea92.
+
+- 2026-11-07 22:22:31 -05:00 — Two-minute recovery checkpoint 20261108T032231Z: 37 changed/new files snapshotted; HEAD 25dea92.
+
+- 2026-11-07 22:24:31 -05:00 — Two-minute recovery checkpoint 20261108T032431Z: 39 changed/new files snapshotted; HEAD 25dea92.
+
+- 2026-11-07 22:26:32 -05:00 — Two-minute recovery checkpoint 20261108T032632Z: 39 changed/new files snapshotted; HEAD 25dea92.
+
+- 2026-11-07 22:28:33 -05:00 — Two-minute recovery checkpoint 20261108T032833Z: 39 changed/new files snapshotted; HEAD 25dea92.
+
+- 2026-11-07 22:30:34 -05:00 — Two-minute recovery checkpoint 20261108T033034Z: 40 changed/new files snapshotted; HEAD 25dea92.
+- 2026-11-07 22:32:06 -05:00 — Integrated real pose camera UI, calibration, exercise reducers, ordered session transport, scoped APIs, reports and validated text; 48 tests and live Gemini HTTP smoke passed. Browser verification running.
