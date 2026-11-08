@@ -236,7 +236,7 @@ export default function Rehab() {
   const running=!!session;
   const holdDisplay=staticQuads&&run.current?.guidedAt!=null?performance.now()-run.current.guidedAt:engine.currentHoldMs;
   return <div className={styles.workspace}>
-    <div className={styles.intro}><div><div className={styles.eyebrow}>Yuvraj / Camera to text</div><h1>Every movement.<br/>A little more clarity.</h1><p>Track your demonstration, see what was measured, and get clear text feedback as you move.</p></div><span className={styles.scope}>Standalone exercise demo</span></div>
+    <div className={styles.intro}><div><div className={styles.eyebrow}>Yuvraj / Camera to text</div><h1>Every movement.<br/>A little more clarity.</h1><p>Track your demonstration, see what was measured, and get clear text feedback as you move. Public demo: camera frames stay on your device; do not enter personal details.</p></div><span className={styles.scope}>Public exercise demo</span></div>
     <p className={`${styles.status} ${error?styles.error:""}`} role="status">{error||notice}</p>
     {recovery&&<div className={styles.status}><p>An unfinished set was found on this browser. Save its last known measurements before starting another.</p><button disabled={busy} onClick={()=>void recover()}>Save recovered set</button></div>}
     <div className={styles.layout}><div>

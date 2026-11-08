@@ -66,3 +66,6 @@
 - 2026-11-08 00:00:37 -05:00 — Two-minute model-only checkpoint 20261108T050037Z: 7 files snapshotted; HEAD fddd30c.
 
 - 2026-11-08 00:01:36 -05:00 — Pushed commit fddd30c to fork branch yuvraj/pose-model-selector. Native Sites publishing is unavailable in this session, so the private phone Site remains on the restored version 1 while the model-only release awaits deployment.
+- 2026-11-08 00:20:37 -05:00 — Started Cloudflare public deployment on `yuvraj/cloudflare-public-demo`. Added signed, per-browser demo identities at the Worker boundary and an explicit public-demo notice; Cloudflare Access is omitted per Yuvraj's direction.
+- 2026-11-08 00:23:19 -05:00 — Changed camera continuity drift into a one-time restart advisory; camera preview, pose tracking and exercise callbacks keep running without interrupting the active session.
+- 2026-11-08 00:30:28 -05:00 — Deployed the public Cloudflare Worker with Gemini and visitor-signing secrets plus D1 storage; verified the public Rehab page, CV context, Gemini readiness, model selector, and distinct signed visitor cookies with isolated empty reports.

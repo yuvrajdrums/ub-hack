@@ -84,6 +84,7 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
       let lastTime = -1;
       let lastFrame = -1;
       let lastBody:{x:number;y:number;scale:number}|null=null;
+      let continuityWarningShown=false;
       const schedule = () => {
         if(generation.current!==token)return;
         if(typeof video.requestVideoFrameCallback==="function")videoCallback.current=video.requestVideoFrameCallback(loop);
@@ -103,8 +104,9 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
           const pose=result.landmarks.length===1?result.landmarks[0]:null;
           if(pose && [23,24,25,26].every(i=>(pose[i]?.visibility??0)>=.6)){
             const body={x:(pose[23].x+pose[24].x)/2,y:(pose[23].y+pose[24].y)/2,scale:Math.hypot(pose[23].x-pose[25].x,pose[23].y-pose[25].y)};
-            if(lastBody && (Math.hypot(body.x-lastBody.x,body.y-lastBody.y)>.25 || (lastBody.scale>.03 && Math.abs(body.scale/lastBody.scale-1)>.6))){
-              stop();setError("Camera position or tracked person changed. Recalibrate before starting again.");interruptHandler.current("Tracking continuity changed");return;
+            if(!continuityWarningShown && lastBody && (Math.hypot(body.x-lastBody.x,body.y-lastBody.y)>.25 || (lastBody.scale>.03 && Math.abs(body.scale/lastBody.scale-1)>.6))){
+              continuityWarningShown=true;
+              setError("Tracking view changed. If tracking looks off, stop and restart the camera.");
             }
             lastBody=body;
           }

@@ -35,3 +35,16 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current work is on branch `
 - Changing model closes the camera tracker and clears calibration/measurement state. Selection is locked during sets and disabled for guided static quads.
 - Verification: Rehab production build and typecheck passed. The focused virtual-camera browser tests passed with the actual Lite, Full and Heavy weights; each model loaded, then switched off with the camera stopped and calibration cleared. These tests do not establish physical-device rep-count accuracy.
 - Local phone Site still points to the restored version 1 until this isolated model-only revision is published.
+
+## Cloudflare public demo deployment
+
+- Current release branch: `yuvraj/cloudflare-public-demo`, based on the model-selector-only branch. Cloudflare Workers serves the full app and API; D1 stores demo reports. The public Worker middleware assigns each browser a signed, HTTP-only visitor identity so D1 records remain isolated by visitor.
+- `PANDA_CF_PUBLIC_DEMO=true` enables public identity translation in `hosting/worker/index.ts`. It overwrites browser-supplied OpenAI identity headers and uses a 30-day signed visitor cookie; `REHAB_CV_AUTH_SECRET` must be a Worker secret. `nodejs_compat_populate_process_env` exposes configured runtime secrets to the existing server handlers.
+- The public page says not to enter personal details; camera frames stay on the device. Gemini/auth credentials are stored as Cloudflare Worker secrets, not in config or source. The dedicated D1 database and migration are deployed.
+- Public Worker URL: https://panda-care-rehab-demo.yuvrajmunjal1.workers.dev/rehab
+- Deployed to Cloudflare Workers with D1 storage and Worker secrets for Gemini and visitor signing. The public /rehab page, CV context endpoint and empty session report endpoint returned 200; Gemini reports configured, four exercise configs loaded and Lite/Full/Heavy selector is present.
+- Verified two independent HTTPS browser sessions each received a different signed Secure visitor cookie and an isolated empty report list. The camera pipeline remains client-side; actual phone movement, rep counting and live Gemini wording still need hands-on validation from Yuvraj's phone.
+
+## Camera continuity behavior
+
+- A detected camera-view or tracked-person jump shows a one-time advisory: “Tracking view changed. If tracking looks off, stop and restart the camera.” The camera stream, preview, pose frame loop and exercise callbacks continue; continuity changes no longer stop the camera or interrupt the session. Starting again clears the advisory.
