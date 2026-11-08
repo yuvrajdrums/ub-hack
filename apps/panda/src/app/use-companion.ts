@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { useLoggedFailure } from "../../../../packages/ui/client-feedback";
 import { exerciseInstruction, type ExerciseRuntime } from "../../../../packages/contracts/exercise-runtime";
 import { requestsExercise } from "../../../../packages/contracts/exercise-navigation";
-import { recordedRecognition, speechInputMode } from "./recorded-recognition";
+import { recordedRecognition, shouldFallbackToRecordedRecognition, speechInputMode } from "./recorded-recognition";
 import { spokenConfirmation } from "./voice-confirmation";
 import { ConversationMicrophone } from "./conversation-microphone";
 import { pcmRecognition, preparePcmInput } from "./pcm-recognition";
@@ -45,6 +46,7 @@ type Recognition = {
   start(): void;
   abort(): void;
 };
+type PandaExerciseCue = { eventId: string; text: string; expiresAt: string | null };
 type SpeechWindow = {
   SpeechRecognition?: new () => Recognition;
   webkitSpeechRecognition?: new () => Recognition;
@@ -81,11 +83,16 @@ async function api<T>(
 }
 export function useCompanion() {
   const [context, setContext] = useState<VoiceContext | null>(null);
+  const contextRef = useRef<VoiceContext | null>(context);
+  contextRef.current = context;
   const [history, setHistory] = useState<VoiceHistoryTurn[]>([]);
   const [reply, setReply] = useState<VoiceReply | null>(null);
+  const [pandaExerciseCue, setPandaExerciseCue] =
+    useState<PandaExerciseCue | null>(null);
   const [text, setText] = useState("");
   const [phase, setPhase] = useState<Phase>("ready");
   const [error, setError] = useState("");
+  useLoggedFailure("Panda companion", error);
   const [notice, setNotice] = useState("");
   const [micConsent, setMicConsent] = useState(false);
   const [speechConsent, setSpeechConsent] = useState(false);
@@ -118,6 +125,7 @@ export function useCompanion() {
   const coachingCadence = useRef(new ExerciseCoachingCadence());
   const coachingEpoch = useRef(0);
   const coachingTick = useRef<() => void>(() => {});
+  const preferRecordedRecognition = useRef(false);
   const flushingFeedback = useRef(false);
   const feedbackFailures = useRef(0),
     feedbackRetryAt = useRef(0);
@@ -482,15 +490,18 @@ export function useCompanion() {
     if (!duringSpeech) stopSound();
     setError("");
     setNotice("");
-    const selected = speechInputMode(
-      Boolean(Ctor),
-      Boolean(
-        "MediaRecorder" in window &&
-        "AudioContext" in window &&
-        navigator.mediaDevices?.getUserMedia,
-      ),
-      Boolean(context?.sttConfigured),
+    const recordingAvailable = Boolean(
+      "MediaRecorder" in window &&
+      "AudioContext" in window &&
+      navigator.mediaDevices?.getUserMedia,
     );
+    const selected = preferRecordedRecognition.current && recordingAvailable && context?.sttConfigured
+      ? "recorded"
+      : speechInputMode(
+          Boolean(Ctor),
+          recordingAvailable,
+          Boolean(context?.sttConfigured),
+        );
     const transcribe = async (blob: Blob, signal: AbortSignal) => {
       const form = new FormData();
       form.set(
@@ -611,6 +622,24 @@ export function useCompanion() {
         if (!speaking.current) setPhase("listening");
         return;
       }
+      if (shouldFallbackToRecordedRecognition(
+        selected === "native",
+        recordingAvailable,
+        Boolean(contextRef.current?.sttConfigured),
+        e.error,
+      )) {
+        failed = true;
+        preferRecordedRecognition.current = true;
+        recognition.current = null;
+        rec.abort();
+        setNotice("Switching to server transcription.");
+        micRestart.current = setTimeout(() => {
+          micRestart.current = null;
+          if (live.current && micConsentRef.current && !inFlight.current)
+            mic(duringSpeech);
+        }, 0);
+        return;
+      }
       failed = true;
       handsfree.current = false;
       microphone.current.close();
@@ -644,6 +673,8 @@ export function useCompanion() {
     };
     try {
       rec.start();
+      if (preferRecordedRecognition.current && selected === "recorded")
+        setNotice("Using server transcription.");
       if (!duringSpeech) setPhase("listening");
     } catch {
       recognition.current = null;
@@ -712,6 +743,29 @@ export function useCompanion() {
     const controller = new AbortController();
     speechAbort.current = controller;
     setPhase("speech_loading");
+    const playBufferedSpeech = async () => {
+      const response = await fetch("/api/voice/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "audio/mpeg" },
+        body: JSON.stringify({ text: message }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const out = await response.json();
+        throw new Error(
+          out.error?.message ||
+            "Speech could not load. Read the response above or retry playback.",
+        );
+      }
+      if (
+        controller.signal.aborted ||
+        token !== soundGeneration.current ||
+        !live.current
+      ) return;
+      await speaker.current.play(await response.arrayBuffer(), done);
+      if (token === soundGeneration.current && live.current)
+        setPhase("speaking");
+    };
     try {
       const response = await fetch("/api/voice/speak", {
         method: "POST",
@@ -720,11 +774,19 @@ export function useCompanion() {
         signal: controller.signal,
       });
       if (!response.ok) {
-        const out = await response.json();
-        throw new Error(
-          out.error?.message ||
+        const out = await response.clone().json().catch(() => null);
+        const streamError = new Error(
+          out?.error?.message ||
             "Speech could not load. Choose browser speech or read the text.",
         );
+        await response.body?.cancel();
+        setNotice("Trying backup speech playback.");
+        try {
+          await playBufferedSpeech();
+          return;
+        } catch {
+          throw streamError;
+        }
       }
       if (
         controller.signal.aborted ||
@@ -738,15 +800,29 @@ export function useCompanion() {
         response.headers.get("content-type")?.startsWith("audio/pcm") &&
         response.body
       ) {
-        await speaker.current.playPcm(
-          response.body,
-          Number(response.headers.get("x-panda-audio-rate") || 24000),
-          () => {
-            if (token === soundGeneration.current && live.current)
-              setPhase("speaking");
-          },
-          done,
-        );
+        try {
+          await speaker.current.playPcm(
+            response.body,
+            Number(response.headers.get("x-panda-audio-rate") || 24000),
+            () => {
+              if (token === soundGeneration.current && live.current)
+                setPhase("speaking");
+            },
+            done,
+          );
+        } catch (streamError) {
+          if (
+            controller.signal.aborted ||
+            token !== soundGeneration.current ||
+            !live.current
+          ) return;
+          setNotice("Trying backup speech playback.");
+          try {
+            await playBufferedSpeech();
+          } catch {
+            throw streamError;
+          }
+        }
       } else {
         const bytes = await response.arrayBuffer();
         if (
@@ -761,6 +837,11 @@ export function useCompanion() {
       }
     } catch (e) {
       if (token === soundGeneration.current && live.current) {
+        if (!controller.signal.aborted && window.speechSynthesis) {
+          setNotice("Panda voice is unavailable right now. Using device speech.");
+          void speak(true);
+          return;
+        }
         handsfree.current = false;
         setError((e as Error).message);
         done();
@@ -881,11 +962,13 @@ export function useCompanion() {
           const position = result.exerciseCue.setupPosition;
           const stage = exerciseRuntime.current?.stage;
           if (position === "rest" && stage && stage !== "rest" || position === "comfortable_target" && stage && stage !== "target") continue;
+          setPandaExerciseCue({ eventId: result.exerciseCue.eventId, text: result.message, expiresAt: result.exerciseCue.expiresAt });
           queuedCue.current = result;
           speakQueuedCue();
         } else if (
           ["report_saved", "guided_report_saved"].includes(item.event.type)
         ) {
+          setPandaExerciseCue(null);
           if (
             result.checkin &&
             ["help_confirmation", "wellbeing_followup"].includes(
@@ -944,6 +1027,7 @@ export function useCompanion() {
   function exerciseFeedback(event: RehabBridgeEvent) {
     const current = checkinRef.current;
     if (!current) return;
+    if (event.type === "guided_session_started") setPandaExerciseCue(null);
     if (["report_saved", "guided_report_saved"].includes(event.type))
       cancelExerciseCoaching();
     feedbackQueue.current = queueExerciseFeedback(feedbackQueue.current, {
@@ -1080,6 +1164,7 @@ export function useCompanion() {
     return true;
   }
   function cancelExerciseCoaching() {
+    setPandaExerciseCue(null);
     coachingEpoch.current++;
     queuedCue.current = null;
     feedbackQueue.current = feedbackQueue.current.filter(
@@ -1159,15 +1244,41 @@ export function useCompanion() {
           inputLevel.current * (0.65 + 0.35 * Math.sin(i * 0.42) ** 2);
     return levels;
   }
+  const retryAction = error.startsWith(
+    "Exercise is saved in Rehab, but Panda context sync needs a retry:",
+  )
+    ? "sync"
+    : error.startsWith("Reply saved. Context refresh failed:")
+      ? "refresh"
+      : pending.current && error
+        ? "reply"
+        : null;
+  function retryError() {
+    if (retryAction === "reply") {
+      const failed = pending.current;
+      if (failed)
+        void send(
+          failed.text,
+          failed.route === "voice/turn" && Boolean(checkinRef.current),
+        );
+    } else if (retryAction === "refresh") {
+      void refresh();
+    } else if (retryAction === "sync") {
+      void flushFeedback();
+    }
+  }
   return {
     audioLevels,
     context,
     history,
     reply,
+    pandaExerciseCue,
     text,
     setText,
     phase,
     error,
+    retryAction,
+    retryError,
     notice,
     checkin,
     micConsent,

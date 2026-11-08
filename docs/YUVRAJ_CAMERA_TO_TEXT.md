@@ -1,3 +1,5 @@
+> Current testbench measurement update (2026-11-08): live camera reps, phase and hold duration now come from the local state machine, with a 200 ms target dwell and direction-aware −15°/+30° tolerance. Gemini is optional feedback wording only; historical Gemini-analysis descriptions below describe earlier revisions. See `docs/REHAB.md` and `Pdetails.md`.
+
 > Upstream implementation notes from Yuvraj at `165d7b74fe67e972389e59dd981ef984ebccacbb`. Statements about his live tests describe that upstream revision. For the current connected build and verification, see [GUIDED_VOICE_INTEGRATION.md](GUIDED_VOICE_INTEGRATION.md).
 
 ## Summary
@@ -18,16 +20,16 @@ Open http://localhost:3002/rehab (http://127.0.0.1:3002/rehab also works). The s
 
 For the integrated three-app gateway, `npm run dev` uses http://localhost:3000/rehab and supplies that exact CV allowed origin. Override `REHAB_DEMO_ALLOWED_ORIGIN` if using a different gateway origin; standalone operation needs no override.
 
-For actual server-side Gemini wording, configure the ignored root `.env.local` before starting:
+For integrated Gemini wording and movement analysis, configure the ignored root `.env.local` before starting. Calibration is manual and makes no Gemini calls:
 
 ```dotenv
-REHAB_GEMINI_MODE=controlled
-REHAB_GEMINI_API_KEY=your_local_key
-REHAB_GEMINI_MODEL=an_account_available_text_model
+PANDA_AI_MODE=gemini
+PANDA_GEMINI_API_KEY=your_local_key
+REHAB_GEMINI_API_KEY=your_separate_rehab_key
 REHAB_GEMINI_TIMEOUT_MS=2000
 ```
 
-This build verified `gemini-3.5-flash-lite` using the user's existing environment credential. Do not commit credentials, use `NEXT_PUBLIC_` or paste them into logs. Root scripts load `.env.local` for the app; restart after changing it. With mode off or an unavailable provider, immediate deterministic text still works and identifies its actual source.
+Panda and connected Rehab use `gemini-3.5-flash-lite` with separate `PANDA_GEMINI_API_KEY` and `REHAB_GEMINI_API_KEY` credentials. Neither switches models automatically. Do not commit credentials, use `NEXT_PUBLIC_` or paste them into logs. Root scripts load `.env.local` for the app; restart after changing it. With mode off or an unavailable provider, immediate deterministic text still works and identifies its actual source.
 
 ## Live camera flow
 

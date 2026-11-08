@@ -11,6 +11,7 @@ import { approvedMedicationTasks } from "./today-actions";
 import styles from "./panda.module.css";
 import { VoiceCircle } from "./voice-circle";
 import RehabWorkspace from "../../../../packages/rehab-bridge/GuidedWorkspace";
+import { useLoggedFailure } from "../../../../packages/ui/client-feedback";
 function MicIcon() {
   return (
     <svg
@@ -146,6 +147,7 @@ export default function Panda() {
     ReturnType<typeof c.rememberedContext>
   > | null>(null);
   const [memoryError, setMemoryError] = useState("");
+  useLoggedFailure("Panda memory", memoryError);
   const dialog = useRef<HTMLDialogElement>(null),
     composer = useRef<HTMLTextAreaElement>(null);
   const medicines = approvedMedicationTasks(c.context),
@@ -264,9 +266,7 @@ export default function Panda() {
             {c.phase === "saving" ? "Saving your choice…" : "Thinking…"}
           </span>
         )}
-        {c.error ? (
-          <p className={styles.error}>{c.error}</p>
-        ) : c.reply ? (
+        {c.reply ? (
           <>
             <p>{c.reply.speechText || c.reply.message}</p>
             {c.reply.speechText && c.reply.speechText !== c.reply.message && (
@@ -362,11 +362,7 @@ export default function Panda() {
           <VoiceCircle phase="idle" readLevels={c.audioLevels} />
         </button>
         <small>Take a breath. Let’s talk.</small>
-        {c.error && (
-          <p className={styles.error} role="alert">
-            {c.error}
-          </p>
-        )}
+
         {c.reply?.proposalId && (
           <button
             type="button"
@@ -569,6 +565,7 @@ export default function Panda() {
             onCoachingPause={c.cancelExerciseCoaching}
             onAskPanda={talk}
             pauseRequested={Boolean(c.reply?.pauseExercise)}
+            pandaCue={c.pandaExerciseCue}
             onExit={closeExercise}
             pandaMessage={
               c.checkin?.stage !== "exercise" ||
@@ -643,23 +640,7 @@ export default function Panda() {
                 <span className={styles.srOnly}>
                   Panda · {c.checkin?.stage?.replaceAll("_", " ")}
                 </span>
-                {c.error && (
-                  <p className={styles.error} role="alert">
-                    {c.error}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void (async () => {
-                          await c.refresh();
-                          await c.openExercise();
-                          await c.retryFeedback();
-                        })()
-                      }
-                    >
-                      Retry Panda
-                    </button>
-                  </p>
-                )}
+
                 {confirmations()}
                 {mode === "text" && (
                   <form
@@ -731,7 +712,7 @@ export default function Panda() {
               Check-in answers remain until explicitly deleted. Plans and
               exercise reports remain in their own apps.
             </p>
-            {memoryError && <p role="alert">{memoryError}</p>}
+
             {!remembered ? (
               <p>Loading…</p>
             ) : (

@@ -33,7 +33,7 @@ services:
         value: gemini
       - key: PANDA_GEMINI_API_KEY
         sync: false
-      - key: PANDA_GEMINI_MODEL
+      - key: REHAB_GEMINI_API_KEY
         sync: false
       - key: PANDA_TTS_MODE
         value: elevenlabs

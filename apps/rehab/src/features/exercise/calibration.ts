@@ -43,11 +43,20 @@ export interface CalibrationRanges {
 
 /** Demonstration references only. Does not prescribe a clinical range. */
 export function deriveCalibration(startAngleDeg: number, targetAngleDeg: number,
-  options: { toleranceDeg?: number; minimumSeparationDeg?: number } = {}): CalibrationRanges | null {
+  options: { toleranceDeg?: number; targetApproachToleranceDeg?: number; targetPastToleranceDeg?: number; minimumSeparationDeg?: number } = {}): CalibrationRanges | null {
   const tolerance = options.toleranceDeg ?? 6;
-  if (![startAngleDeg, targetAngleDeg, tolerance].every(Number.isFinite) || tolerance <= 0 ||
+  const approach = options.targetApproachToleranceDeg ?? 15;
+  const past = options.targetPastToleranceDeg ?? 30;
+  const separation = options.minimumSeparationDeg ?? 15;
+  if (![startAngleDeg, targetAngleDeg, tolerance, approach, past, separation].every(Number.isFinite) || tolerance <= 0 || approach <= 0 || past <= 0 || separation <= 0 ||
     startAngleDeg < 0 || startAngleDeg > 180 || targetAngleDeg < 0 || targetAngleDeg > 180 ||
-    Math.abs(targetAngleDeg - startAngleDeg) < Math.max(options.minimumSeparationDeg ?? 15, tolerance * 2 + 1)) return null;
+    Math.abs(targetAngleDeg - startAngleDeg) < Math.max(separation, tolerance * 2 + 1)) return null;
   const range = (value: number): [number, number] => [Math.max(0, value - tolerance), Math.min(180, value + tolerance)];
-  return { startAngleDeg, targetAngleDeg, startRangeDeg: range(startAngleDeg), targetRangeDeg: range(targetAngleDeg) };
+  const startRangeDeg = range(startAngleDeg);
+  // Leave more than the engine's 3° release hysteresis between the two regions.
+  const targetRangeDeg: [number, number] = targetAngleDeg > startAngleDeg
+    ? [Math.max(0, targetAngleDeg - approach, startRangeDeg[1] + 4), Math.min(180, targetAngleDeg + past)]
+    : [Math.max(0, targetAngleDeg - past), Math.min(180, targetAngleDeg + approach, startRangeDeg[0] - 4)];
+  if (targetRangeDeg[0] >= targetRangeDeg[1] || targetAngleDeg < targetRangeDeg[0] || targetAngleDeg > targetRangeDeg[1]) return null;
+  return { startAngleDeg, targetAngleDeg, startRangeDeg, targetRangeDeg };
 }

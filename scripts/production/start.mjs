@@ -6,7 +6,7 @@ productionConfig();
 if (!/^(gemini|openai)$/.test(process.env.PANDA_AI_MODE || ""))
   throw Error("Production requires a configured model provider");
 for (const key of process.env.PANDA_AI_MODE === "gemini"
-  ? ["PANDA_GEMINI_API_KEY", "PANDA_GEMINI_MODEL"]
+  ? ["PANDA_GEMINI_API_KEY"]
   : ["PANDA_OPENAI_API_KEY", "PANDA_OPENAI_MODEL"])
   if (!process.env[key]) throw Error(key + " is missing");
 if (

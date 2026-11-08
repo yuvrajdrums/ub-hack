@@ -141,7 +141,17 @@ test("only an assigned clinician imports and approves; patients never receive dr
   );
 });
 test("guided exercise uses authenticated patient storage and patient-only writes", async () => {
-  const care=careService(),cv=cvService(undefined,{care:()=>care.snapshot()});
+  const care=await as(clinician,()=>careService());
+  const current=await as(clinician,()=>care.snapshot());
+  const draft=await as(clinician,()=>care.importPlan({
+    requestId:randomUUID(),
+    sourceText:"Static quads\nWorking leg: left",
+  }));
+  await as(clinician,()=>care.approve(draft.id,{
+    requestId:randomUUID(),
+    expectedCurrentVersion:current.plan?.version||0,
+  }));
+  const cv=cvService(undefined,{care:()=>care.snapshot()});
   const payload={requestId:randomUUID(),exerciseId:"static-quads",side:"left",startedAtUtc:new Date().toISOString(),evidence:"patient_reported"};
   const session=await as(actorA,()=>cv.start(a,payload));
   assert.equal(session.careReference?.patientId,a);

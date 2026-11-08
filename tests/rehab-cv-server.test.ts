@@ -1,4 +1,4 @@
-import { yuvrajEnvironment } from "../packages/yuvraj-integration/environment.mjs";
+import { rehabProcessEnvironment } from "../packages/yuvraj-integration/environment.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp,rm } from "node:fs/promises";
@@ -24,9 +24,9 @@ function event(sequence:number,changes:Partial<CvEventCandidate>={}):CvEventCand
 function timing(ms=130000):CvTiming {return {elapsedTimeMs:ms,activeTimeMs:96000,pausedTimeMs:ms-96000,userPausedTimeMs:14000,trackingPausedTimeMs:20000,otherPausedTimeMs:ms-130000};}
 function finish(lastMeasurementSequence:number):CvFinishInput {return {requestId:randomUUID(),lastMeasurementSequence,report:{observedEndedAtUtc:"2026-11-07T22:02:10.000Z",completionStatus:"completed",terminationReason:"finished",timing:timing(),timingQuality:"complete"}};}
 function controlled(t:test.TestContext) {
-  const names=["REHAB_GEMINI_MODE","PANDA_GEMINI_API_KEY","REHAB_GEMINI_MODEL"];
+  const names=["REHAB_GEMINI_MODE","PANDA_GEMINI_API_KEY","REHAB_GEMINI_API_KEY","REHAB_GEMINI_MODEL"];
   const before=names.map(n=>process.env[n]);
-  process.env.REHAB_GEMINI_MODE="controlled";process.env.PANDA_GEMINI_API_KEY="test-only-key";process.env.REHAB_GEMINI_MODEL="test-model";
+  process.env.REHAB_GEMINI_MODE="controlled";process.env.PANDA_GEMINI_API_KEY="test-only-key";process.env.REHAB_GEMINI_API_KEY="test-rehab-key";process.env.REHAB_GEMINI_MODEL="test-model";
   t.after(()=>names.forEach((n,i)=>{if(before[i]===undefined)delete process.env[n];else process.env[n]=before[i];}));
 }
 test("CV ordered admission rejects gaps, deduplicates requests, and binds reports to their owner",async t=>{
@@ -162,15 +162,15 @@ test("Body limits reject oversized or non-JSON input",async()=>{
 });
 
 
-test("connected exercise feedback reuses Panda Gemini privately and respects explicit off",async t=>{
-  const names=["PANDA_INTEGRATION","PANDA_AI_MODE","PANDA_GEMINI_API_KEY","PANDA_GEMINI_MODEL","REHAB_GEMINI_MODE","PANDA_GEMINI_API_KEY","REHAB_GEMINI_MODEL"];
+test("connected exercise feedback uses the separate Rehab key and respects explicit off",async t=>{
+  const names=["PANDA_INTEGRATION","PANDA_AI_MODE","PANDA_GEMINI_API_KEY","REHAB_GEMINI_MODE","REHAB_GEMINI_API_KEY","REHAB_GEMINI_MODEL"];
   const before=names.map(name=>process.env[name]);t.after(()=>names.forEach((name,i)=>{if(before[i]===undefined)delete process.env[name];else process.env[name]=before[i];}));
   for(const name of names)delete process.env[name];
-  Object.assign(process.env,{PANDA_INTEGRATION:"connected",PANDA_AI_MODE:"gemini",PANDA_GEMINI_API_KEY:"private-shared-key",PANDA_GEMINI_MODEL:"test-model"});
-  Object.assign(process.env,yuvrajEnvironment(process.env));
-  assert.deepEqual(geminiReadiness(),{mode:"controlled",configured:true,model:"test-model"});assert.doesNotMatch(JSON.stringify(geminiReadiness()),/private-shared-key/);
+  Object.assign(process.env,{PANDA_INTEGRATION:"connected",PANDA_AI_MODE:"gemini",PANDA_GEMINI_API_KEY:"private-panda-key",REHAB_GEMINI_API_KEY:"private-rehab-key"});
+  Object.assign(process.env,rehabProcessEnvironment(process.env));
+  assert.deepEqual(geminiReadiness(),{mode:"controlled",configured:true,model:"gemini-3.5-flash-lite"});assert.doesNotMatch(JSON.stringify(geminiReadiness()),/private-rehab-key/);
   let calls=0;
-  const fetcher=async(_url:unknown,options?:RequestInit)=>{calls++;assert.equal(new Headers(options?.headers).get("x-goog-api-key"),"private-shared-key");return new Response(JSON.stringify({candidates:[{finishReason:"STOP",content:{parts:[{text:'{"phraseId":"gentle"}'}]}}]}));};
+  const fetcher=async(_url:unknown,options?:RequestInit)=>{calls++;assert.equal(new Headers(options?.headers).get("x-goog-api-key"),"private-rehab-key");return new Response(JSON.stringify({candidates:[{finishReason:"STOP",content:{parts:[{text:'{"phraseId":"gentle"}'}]}}]}));};
   assert.equal((await selectPhrase("TRACKING_RESTORED",{primary:"Tracking is ready again.",gentle:"Your working leg is visible again."},fetcher as typeof fetch)).source,"gemini_selected_approved_variant");
   process.env.REHAB_GEMINI_MODE="off";assert.equal((await selectPhrase("TRACKING_RESTORED",{primary:"Tracking is ready again."},fetcher as typeof fetch)).fallbackReason,"disabled");assert.equal(calls,1);
 });

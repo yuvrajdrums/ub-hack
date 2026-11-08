@@ -1,3 +1,5 @@
+> Current testbench measurement update (2026-11-08): live camera reps, phase and hold duration now come from the local state machine, with a 200 ms target dwell and direction-aware −15°/+30° tolerance. Gemini is optional feedback wording only; historical Gemini-analysis descriptions below describe earlier revisions. See `docs/REHAB.md` and `Pdetails.md`.
+
 > The latest upstream revision is now integrated through a separate adapter, with a complete unchanged reference copy. See [YUVRAJ_LATEST_INTEGRATION.md](YUVRAJ_LATEST_INTEGRATION.md). The details below describe the earlier integration and its history.
 
 # Circular companion and guided exercise integration
@@ -25,7 +27,7 @@ The new Panda home follows the supplied slate/taupe reference: a rounded blurred
 
 ElevenLabs TTS streams bounded 24kHz signed 16-bit mono PCM through `/api/voice/speak` when requested with `Accept: audio/pcm`. Existing MP3 clients remain supported. Playback begins before EOF. Stop cancels the upstream reader and queued audio nodes. AudioWorklet capture preserves the start of utterances, ends after a 650ms pause, and supports sustained speech interruption when echo cancellation is reported. Other browsers retain recording/native fallbacks and tap-to-interrupt. No play-audio button is required. Per-utterance model calls receive retained patient context; this is not an always-open realtime model session.
 
-No new keys are required. Connected Rehab now reuses the configured Panda Gemini key/model when separate Rehab settings are absent. An explicit `REHAB_GEMINI_MODE=off` remains respected; standalone defaults remain off. Gemini selects a validated wording variant, and unavailable/rate-limited generation completes with the deterministic cue. No pending phrase is marked spoken: only finalized feedback is forwarded to Panda, attributed in patient memory and played through the existing ElevenLabs voice.
+Panda and connected Rehab use `gemini-3.5-flash-lite` with separate server-only `PANDA_GEMINI_API_KEY` and `REHAB_GEMINI_API_KEY` credentials. Neither silently switches models. An explicit `REHAB_GEMINI_MODE=off` remains respected; standalone defaults remain off. Gemini selects a validated wording variant, and unavailable/rate-limited generation completes with the deterministic cue. No pending phrase is marked spoken: only finalized feedback is forwarded to Panda, attributed in patient memory and played through the existing ElevenLabs voice.
 
 ## Storage and release
 
@@ -43,7 +45,7 @@ Human listening, real microphone echo/interruption on phones and physical camera
 
 ## Camera-first exercise view
 
-The embedded workspace uses `presentation="camera"`. Live video and the aligned pose overlay fill the screen; Panda's circular visualizer and mic/keyboard controls remain in the top-right corner. Centered text gives the current guidance or Panda's spoken/review response. Exercise/side selection and calibration sit in a setup sheet. The standalone diagnostic workspace remains available at `/rehab`.
+The embedded workspace uses `presentation="camera"`. Live video and the aligned pose overlay fill the screen; Panda's circular visualizer and mic/keyboard controls remain in the top-right corner. Centered text gives the current guidance or Panda's spoken/review response. Care supplies the exercise and side; manual calibration controls appear directly on the camera view. Automatic calibration and its Gemini requests are disabled. Patient entry is `/exercise`, and Care entry retains the return destination with `?from=care`.
 
 The same engine and canonical owner APIs drive both presentations. Exit attempts to save an interrupted session before closing. A Panda discomfort request stops and saves the current set while keeping the companion mounted; the owner report does not override the pending care concern. Starting another set is disabled while Panda is reviewing the result.
 

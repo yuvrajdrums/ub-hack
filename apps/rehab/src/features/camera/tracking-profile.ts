@@ -18,7 +18,7 @@ export interface TrackingProfile {
   };
 }
 
-/** Selects measurement and overlay joints; the native model still predicts 33 landmarks. */
+/** Selects measurement joints; camera overlays draw all confidently visible body landmarks. */
 export function exerciseTrackingProfile(exerciseId: ExerciseId, side: Side): TrackingProfile {
   const offset = side === "left" ? 0 : 1;
   const shoulder = 11 + offset, hip = 23 + offset, knee = 25 + offset, ankle = 27 + offset;

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useLoggedFailure } from "../ui/client-feedback";
 type Account = {
   role: "patient" | "clinician";
   displayName: string;
@@ -9,6 +10,7 @@ type Account = {
 export function AccountMenu({ onLeave }: { onLeave?: () => void }) {
   const [account, setAccount] = useState<Account | null>(null),
     [error, setError] = useState("");
+  useLoggedFailure("Panda account", error);
   useEffect(() => {
     let active = true;
     void fetch("/auth/config")
@@ -100,7 +102,7 @@ export function AccountMenu({ onLeave }: { onLeave?: () => void }) {
         >
           Sign out
         </button>
-        {error && <p role="alert">{error}</p>}
+
       </div>
     </details>
   );

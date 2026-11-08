@@ -4,9 +4,9 @@ import {dialogueTurn,type DialogueInput} from "../apps/panda/src/server/conversa
 import {fixtureCare} from "../packages/contracts/fixtures";
 function input():DialogueInput{return {care:fixtureCare(),session:{id:"00000000-0000-4000-8000-000000000001",patientId:"pat-demo-001",planId:"plan-demo-001",planVersion:1,stage:"medications",medicationTaskIds:["task-demo-001"],medicationIndex:0,startedAt:new Date().toISOString(),updatedAt:new Date().toISOString()},history:[{id:"hello",checkinId:"session",role:"assistant",text:"How's your elbow feeling?",at:new Date().toISOString()},{id:"answer",checkinId:"session",role:"user",text:"My elbow feels okay.",at:new Date().toISOString()}],memory:[],text:"I took it.",moves:[{id:"med_yes",goal:"Propose marking the evening medicine taken; don't execute it.",fallback:"Shall I mark it taken?"}]};}
 async function configured(fn:()=>Promise<void>){
-  const names=["PANDA_AI_MODE","PANDA_GEMINI_MODEL","PANDA_GEMINI_API_KEY"] as const;
+  const names=["PANDA_AI_MODE","PANDA_GEMINI_API_KEY"] as const;
   const values=names.map(name=>process.env[name]),fetch=globalThis.fetch;
-  Object.assign(process.env,{PANDA_AI_MODE:"gemini",PANDA_GEMINI_MODEL:"test-model",PANDA_GEMINI_API_KEY:"fake-secret"});
+  Object.assign(process.env,{PANDA_AI_MODE:"gemini",PANDA_GEMINI_API_KEY:"fake-secret"});
   try{await fn();}finally{globalThis.fetch=fetch;names.forEach((name,i)=>{if(values[i]===undefined)delete process.env[name];else process.env[name]=values[i];});}
 }
 function result(out:unknown){return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(out)}]}}]});}
@@ -41,8 +41,7 @@ test("a temporary model outage retries the identical read-only generation withou
 
 test("voice generation uses a model-compatible low-latency thinking configuration",async()=>{
   const {conversationThinking}=await import("../apps/panda/src/server/conversation");
-  assert.deepEqual(conversationThinking("gemini-3.6-flash"),{thinkingLevel:"minimal"});
-  assert.deepEqual(conversationThinking("gemini-3.8-flash"),{thinkingLevel:"low"});
+  assert.deepEqual(conversationThinking("gemini-3.5-flash-lite"),{thinkingLevel:"minimal"});
   assert.deepEqual(conversationThinking("gemini-2.5-flash"),{thinkingBudget:0});
-  assert.equal(conversationThinking("test-model"),undefined);
+  assert.equal(conversationThinking("gemma-4-31b-it"),undefined);
 });

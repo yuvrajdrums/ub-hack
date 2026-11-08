@@ -23,7 +23,9 @@ const proc = spawn(process.execPath, ["scripts/run.mjs", "start", "all"], {
     PANDA_INTEGRATION: "connected",
     PANDA_AI_MODE: "demo",
     PANDA_TTS_MODE: "browser",
-    PANDA_GEMINI_API_KEY: "synthetic-private",
+    PANDA_GEMINI_API_KEY: "synthetic-panda-private",
+    REHAB_GEMINI_API_KEY: "synthetic-rehab-private",
+    PANDA_PORT: "3000",
     REHAB_GEMINI_MODE: "controlled",
     REHAB_GEMINI_MODEL: "test-model",
   },
@@ -61,25 +63,15 @@ try {
     await sleep(300);
   }
   if (!ready) throw Error(logs);
-  const opened = await api("/api/voice/checkin/open-exercise", {
-    requestId: randomUUID(),
+  const careState = await api("/care/api/state");
+  const draft = await api("/care/api/plans/import", { requestId: randomUUID(), sourceText: "Seated knee extension. Working leg: left." });
+  await api(`/care/api/plans/${draft.id}/approve`, { requestId: randomUUID(), expectedCurrentVersion: careState.plan?.version || 0 });
+  const opened = await api("/api/voice/checkin/open-exercise", { requestId: randomUUID() });
+  const disabledCalibration = await fetch(origin + "/rehab/api/cv/v1/calibrate", {
+    method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: "{}",
   });
-  const calibrationId = randomUUID();
-  const calibrated = await api("/rehab/api/cv/v1/calibrate", {
-    requestId: calibrationId,
-    exerciseId: "seated-knee-extension",
-    side: "left",
-    requestedPosition: "auto",
-    frames,
-  });
-  assert.equal(calibrated.accepted, true);
-  const calibrationCue = await api("/api/voice/exercise-feedback", {
-    requestId: randomUUID(),
-    checkinId: opened.checkin.id,
-    event: { version: "1.0.0", type: "guided_calibration", calibrationId },
-  });
-  assert.equal(calibrationCue.message, calibrated.cue);
-  assert.ok(calibrationCue.exerciseCue);
+  assert.equal(disabledCalibration.status, 409);
+  assert.equal((await disabledCalibration.json()).error.code, "MANUAL_CALIBRATION_REQUIRED");
   const session = await api("/rehab/api/cv/v1/sessions", {
     requestId: randomUUID(),
     exerciseId: "seated-knee-extension",
@@ -159,14 +151,13 @@ try {
   );
   await api(`/care/api/reports/${session.id}/ack`, { requestId: randomUUID() });
   const memory = await api("/api/voice/memory");
-  for (const source of ["gemini_calibration", "gemini_rep_analysis"])
-    assert.ok(memory.events.some((e) => e.metadata.textSource === source));
+  assert.ok(memory.events.some((e) => e.metadata.textSource === "gemini_rep_analysis"));
   assert.doesNotMatch(
     await readFile(path.join(dir, "rehab-cv.json"), "utf8"),
     /"landmarks"/,
   );
   console.log(
-    "PASS: upstream calibration and movement analysis → verified Panda speech/context → report review → Care acknowledgement, over the actual gateway HTTP APIs. Provider responses are synthetic test fixtures.",
+    "PASS: manual calibration and movement analysis → verified Panda speech/context → report review → Care acknowledgement, over the actual gateway HTTP APIs. Provider responses are synthetic test fixtures.",
   );
 } catch (error) {
   console.error(logs);

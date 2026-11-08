@@ -8,6 +8,9 @@ export type SpeechInput = {
 export function speechInputMode(nativeAvailable:boolean,recordingAvailable:boolean,transcriptionConfigured:boolean) {
   return transcriptionConfigured&&recordingAvailable ? "recorded" : nativeAvailable ? "native" : undefined;
 }
+export function shouldFallbackToRecordedRecognition(nativeSelected:boolean,recordingAvailable:boolean,transcriptionConfigured:boolean,error:string) {
+  return nativeSelected&&recordingAvailable&&transcriptionConfigured&&!(["not-allowed","audio-capture","no-speech"].includes(error));
+}
 /** Bounded microphone turn; configured server transcription is preferred to browser recognition. */
 export function recordedRecognition(transcribe:(audio:Blob,signal:AbortSignal)=>Promise<string>,processing:()=>void,sharedContext?:()=>AudioContext,sharedStream?:()=>Promise<MediaStream>):SpeechInput {
   let active=false,stream:MediaStream|null=null,recorder:MediaRecorder|null=null,context:AudioContext|null=null;

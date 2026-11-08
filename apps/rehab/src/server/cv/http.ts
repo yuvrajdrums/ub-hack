@@ -1,7 +1,7 @@
 import { productionEnabled } from "../../../../../packages/platform/production/config";
 import { activePatient } from "../../../../../packages/platform/production/context";
 import { respond } from "../../../../../packages/platform/http";
-import { connected } from "../../../../../packages/platform/peers";
+import { connected, getCare } from "../../../../../packages/platform/peers";
 import { PATIENT_ID } from "../../../../../packages/contracts/common";
 import { createHmac,randomBytes,randomUUID,timingSafeEqual } from "node:crypto";
 import { mkdir,readFile,writeFile } from "node:fs/promises";
@@ -11,6 +11,7 @@ import { DomainError,dataFile } from "../../../../../packages/platform/json-stor
 import { CV_FEATURE_VERSION,type CvContext } from "../../../../../packages/contracts/rehab-cv";
 import { CV_CONFIGS } from "./config";
 import { geminiReadiness } from "./gemini";
+import { resolvePlanExercise } from "../../../../../packages/rehab-bridge/plan-assignment";
 
 const COOKIE="panda_cv_demo";
 const globals=globalThis as typeof globalThis & {__cvAuthSecret?:Promise<string>};
@@ -38,8 +39,10 @@ function publicOrigin(req:Request) {
 function guardOrigin(req:Request) {
   const origin=req.headers.get("origin");
   const allowed=publicOrigin(req);
-  if(req.headers.get("sec-fetch-site")==="cross-site" || (origin && origin!==allowed && !(connected()&&!productionEnabled()&&["http://localhost:3000","http://127.0.0.1:3000"].includes(origin))))throw new DomainError("ORIGIN_REJECTED","Use the same demo origin",403);
-  if(connected()&&!productionEnabled()&&origin){const value=new URL(origin);if(["localhost","127.0.0.1"].includes(value.hostname)&&value.port==="3000")return;}
+  const localOrigins=["3000","8000",process.env.PANDA_PORT||"3000"].flatMap(port=>[`http://localhost:${port}`,`http://127.0.0.1:${port}`]);
+  const connectedLocalOrigin=Boolean(connected()&&!productionEnabled()&&origin&&localOrigins.includes(origin));
+  if(req.headers.get("sec-fetch-site")==="cross-site" || (origin && origin!==allowed && !connectedLocalOrigin))throw new DomainError("ORIGIN_REJECTED","Use the same demo origin",403);
+  if(connectedLocalOrigin)return;
   if(req.method!=="GET" && !origin)throw new DomainError("ORIGIN_REQUIRED","A same-origin request is required",403);
 }
 function headers(){return {"Cache-Control":"no-store","X-Panda-Mode":"synthetic-demo","X-Content-Type-Options":"nosniff"};}
@@ -82,7 +85,11 @@ export function cvError(error:unknown) {
   return Response.json({ok:false,error:{code,message}},{status,headers:headers()});
 }
 export async function contextResponse(req:Request):Promise<Response> {
-  if(productionEnabled()||connected())return cvRespond(req,async actor=>({featureVersion:CV_FEATURE_VERSION,mode:productionEnabled()?"authenticated":"connected_demo",storageScope:actor.subject,csrfToken:"",exercises:CV_CONFIGS,gemini:geminiReadiness()} as CvContext));
+  if(productionEnabled()||connected())return cvRespond(req,async actor=>{
+    const care=await getCare();
+    if(care.patientId!==actor.subject)throw new DomainError("FORBIDDEN","Patient context mismatch",403);
+    return {featureVersion:CV_FEATURE_VERSION,mode:productionEnabled()?"authenticated":"connected_demo",storageScope:actor.subject,csrfToken:"",exercises:CV_CONFIGS,planExercise:resolvePlanExercise(care.plan),gemini:geminiReadiness()} as CvContext;
+  });
   try {
     guardOrigin(req);
     let identity=await readIdentity(req);let newToken=false;

@@ -31,15 +31,6 @@ const analysis = {
   workingMemory: "One completed movement.",
   rangeDegrees: 70,
 };
-const calibration = {
-  detectedPosition: "rest",
-  accepted: true,
-  angleDeg: 90,
-  confidence: 0.9,
-  stable: true,
-  cue: "Hold your comfortable resting position.",
-  workingMemory: "Rest detected.",
-};
 const response = (data: unknown) =>
   new Response(
     JSON.stringify({
@@ -56,12 +47,14 @@ async function setup(t: test.TestContext, fetcher: typeof fetch) {
     "REHAB_GEMINI_MODE",
     "REHAB_GEMINI_MODEL",
     "PANDA_GEMINI_API_KEY",
+    "REHAB_GEMINI_API_KEY",
   ];
   const prior = names.map((n) => process.env[n]);
   Object.assign(process.env, {
     REHAB_GEMINI_MODE: "controlled",
     REHAB_GEMINI_MODEL: "test-model",
-    PANDA_GEMINI_API_KEY: "test-private",
+    PANDA_GEMINI_API_KEY: "test-panda-private",
+    REHAB_GEMINI_API_KEY: "test-rehab-private",
   });
   t.after(() =>
     names.forEach((n, i) => {
@@ -72,8 +65,10 @@ async function setup(t: test.TestContext, fetcher: typeof fetch) {
   const dir = await mkdtemp(path.join(tmpdir(), "panda-upstream-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, "cv.json"),
-    care = careService(path.join(dir, "care.json")),
-    owner = (await care.snapshot()).patientId;
+    careStore = careService(path.join(dir, "care.json"));
+  const snapshot = await careStore.snapshot();
+  snapshot.plan!.instructions = [{ id: "synthetic-exercise", sourceRef: "synthetic:1", text: "Seated knee extension. Working leg: left." }];
+  const care = { snapshot: async () => structuredClone(snapshot) }, owner = snapshot.patientId;
   const cv = cvService(file, { care: () => care.snapshot(), fetcher });
   const session = await cv.start(owner, {
     requestId: randomUUID(),
@@ -97,8 +92,9 @@ async function setup(t: test.TestContext, fetcher: typeof fetch) {
 }
 test("unchanged upstream analysis composes with patient binding, canonical reports and Panda feedback", async (t) => {
   let calls = 0;
-  const x = await setup(t, async () => {
+  const x = await setup(t, async (_url, init) => {
     calls++;
+    assert.equal(new Headers(init?.headers).get("x-goog-api-key"), "test-rehab-private");
     return response(analysis);
   });
   const input = { requestId: randomUUID(), batchSequence: 1, frames: frames() };
@@ -210,67 +206,48 @@ test("unchanged upstream analysis composes with patient binding, canonical repor
   );
   assert.doesNotMatch(await readFile(x.file, "utf8"), /"landmarks"/);
 });
-test("Gemini calibration is owner-scoped, replay-safe and its cue reaches Panda without raw-frame storage", async (t) => {
+test("automatic calibration is rejected without a provider call; manual references remain usable", async (t) => {
   let calls = 0;
   const x = await setup(t, async () => {
     calls++;
-    return response(calibration);
+    throw Error("Calibration must not call a provider");
   });
-  const input = {
-    requestId: randomUUID(),
-    exerciseId: "seated-knee-extension",
-    side: "left",
-    requestedPosition: "auto",
-    frames: frames(),
-  };
-  await x.cv.calibrate(x.owner, input);
-  await x.cv.calibrate(x.owner, input);
-  assert.equal(calls, 1);
-  await assert.rejects(
-    () => x.cv.calibration("foreign", input.requestId),
-    /not available/,
-  );
-  await assert.rejects(
-    () => x.cv.calibrate(x.owner, { ...input, side: "right" }),
-    /changed/,
-  );
-  const memory = new PatientMemoryRepository(path.join(x.dir, "memory.sqlite"));
-  const voice = voiceService(
-    path.join(x.dir, "voice.sqlite"),
-    {
-      mode: "connected",
-      snapshot: () => x.care.snapshot(),
-      write: () => {
-        throw Error("unexpected");
-      },
-    },
-    undefined,
-    undefined,
-    Date.now,
-    memory,
-  );
-  const chat = checkinService(memory, voice, {
-    mode: "connected",
-    snapshot: () => x.care.snapshot(),
-    exerciseSession: async () => {
-      throw Error("unused");
-    },
-    guidedCalibration: (id) => x.cv.calibration(x.owner, id),
-  });
-  const opened = await chat.openExercise({ requestId: randomUUID() });
-  const spoken = await chat.exerciseFeedback({
-    requestId: randomUUID(),
-    checkinId: opened.checkin!.id,
-    event: {
-      version: "1.0.0",
-      type: "guided_calibration",
-      calibrationId: input.requestId,
-    },
-  });
-  assert.equal(spoken.message, calibration.cue);
-  assert.ok(spoken.exerciseCue);
+  for (const requestedPosition of ["auto", "rest", "comfortable_target"]) {
+    await assert.rejects(() => x.cv.calibrate(x.owner, {
+      requestId: randomUUID(), exerciseId: "seated-knee-extension", side: "left", requestedPosition, frames: frames(),
+    }), (error: any) => error.code === "MANUAL_CALIBRATION_REQUIRED" && error.status === 409);
+  }
+  assert.equal(calls, 0);
+  assert.equal(x.session.configuration.startAngleDeg, 90);
+  assert.equal(x.session.configuration.targetAngleDeg, 160);
   assert.doesNotMatch(await readFile(x.file, "utf8"), /"landmarks"/);
 });
+
+test("feedback wording uses the Rehab key", async (t) => {
+  let calls = 0;
+  const x = await setup(t, async (_url, init) => {
+    calls++;
+    assert.equal(new Headers(init?.headers).get("x-goog-api-key"), "test-rehab-private");
+    return response({ phraseId: "primary" });
+  });
+  const changes = await x.cv.changes(x.owner, x.session.id, 0);
+  const cue = changes.changes.map((item) => item.feedback).find((f) => f.generationStatus === "pending");
+  assert.ok(cue);
+  const result = await x.cv.generate(x.owner, x.session.id, cue.eventId, { requestId: randomUUID() });
+  assert.equal(result.textSource, "gemini_selected_approved_variant");
+  assert.equal(calls, 1);
+});
+
+test("missing Rehab key never falls back to Panda's key", async (t) => {
+  let calls = 0;
+  const x = await setup(t, async () => { calls++; return response(analysis); });
+  delete process.env.REHAB_GEMINI_API_KEY;
+  await assert.rejects(() => x.cv.analyze(x.owner, x.session.id, {
+    requestId: randomUUID(), batchSequence: 1, frames: frames(),
+  }), /Set REHAB_GEMINI_API_KEY/);
+  assert.equal(calls, 0);
+});
+
 test("late analysis cannot cross a pause, and provider failure preserves earlier progress", async (t) => {
   let release!: (response: Response) => void;
   const x = await setup(

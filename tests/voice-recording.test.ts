@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { recordedRecognition, speechInputMode } from "../apps/panda/src/app/recorded-recognition";
+import { recordedRecognition, shouldFallbackToRecordedRecognition, speechInputMode } from "../apps/panda/src/app/recorded-recognition";
 const tick=()=>new Promise<void>(resolve=>setImmediate(resolve));
 function microphone(t:test.TestContext){
   let stopped=0,disconnected=0,closed=0;
@@ -30,6 +30,10 @@ test("configured transcription bypasses an exposed but unreliable native speech 
   assert.equal(speechInputMode(false,true,true),"recorded");
   assert.equal(speechInputMode(true,true,false),"native");
   assert.equal(speechInputMode(false,true,false),undefined);
+  assert.equal(shouldFallbackToRecordedRecognition(true,true,true,"network"),true);
+  assert.equal(shouldFallbackToRecordedRecognition(true,true,true,"not-allowed"),false);
+  assert.equal(shouldFallbackToRecordedRecognition(true,false,true,"network"),false);
+  assert.equal(shouldFallbackToRecordedRecognition(false,true,true,"network"),false);
 });
 test("recorded audio reaches transcription and emits a turn using the existing unlocked audio context",async t=>{
   const x=microphone(t);let processing=0,calls=0,words="",ended=0;

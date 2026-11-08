@@ -4,6 +4,10 @@ import {
 } from "../../../../packages/contracts/voice";
 import type { CareSnapshot } from "../../../../packages/contracts/care";
 import { DomainError } from "../../../../packages/platform/json-store";
+import {
+  geminiFlashFetch,
+  PANDA_GEMINI_MODEL,
+} from "../../../../packages/yuvraj-integration/gemini-model.mjs";
 import { z } from "zod";
 
 export function providerStatus() {
@@ -12,7 +16,7 @@ export function providerStatus() {
     throw new DomainError("NOT_CONFIGURED", "PANDA_AI_MODE must be demo, gemini, or openai.", 503);
   const engine = mode === "demo" ? "demo_rules" as const : mode as "gemini" | "openai";
   const configured = mode === "demo" || Boolean(mode === "gemini"
-    ? process.env.PANDA_GEMINI_API_KEY && process.env.PANDA_GEMINI_MODEL
+    ? process.env.PANDA_GEMINI_API_KEY
     : process.env.PANDA_OPENAI_API_KEY && process.env.PANDA_OPENAI_MODEL);
   return { engine, configured };
 }
@@ -188,11 +192,11 @@ async function geminiCommand(
   patientContext = "No remembered check-in entries yet.",
 ): Promise<{ command: VoiceCommand | null; engine: "gemini" }> {
   const key = process.env.PANDA_GEMINI_API_KEY,
-    model = process.env.PANDA_GEMINI_MODEL;
-  if (!key || !model)
+    model = PANDA_GEMINI_MODEL;
+  if (!key)
     throw new DomainError(
       "NOT_CONFIGURED",
-      "Set PANDA_GEMINI_API_KEY and PANDA_GEMINI_MODEL on the Panda server.",
+      "Set PANDA_GEMINI_API_KEY on the Panda server.",
       503,
     );
   if (!/^[a-zA-Z0-9._-]+$/.test(model))
@@ -203,7 +207,7 @@ async function geminiCommand(
     );
   let response: Response;
   try {
-    response = await fetch(
+    response = await geminiFlashFetch(
       "https://generativelanguage.googleapis.com/v1beta/models/" +
         model +
         ":generateContent",
@@ -236,6 +240,7 @@ async function geminiCommand(
         }),
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000),
       },
+      key,
     );
   } catch {
     throw new DomainError(

@@ -114,12 +114,12 @@ export function usePoseCamera(profile:TrackingProfile,onFrame: (frame: CameraFra
             if (result.landmarks.length === 1) {
               const points = result.landmarks[0];
               ctx.strokeStyle = "#b9efce"; ctx.lineWidth = 4;
-              const visible=(i:number)=>(points[i]?.visibility??0)>=profile.minimumVisibility && (points[i]?.presence??1)>=profile.minimumPresence;
-              for (const [a,b] of profile.connections) {
+              const visible=(i:number)=>!!points[i] && Number.isFinite(points[i].x) && Number.isFinite(points[i].y) && points[i].x>=0 && points[i].x<=1 && points[i].y>=0 && points[i].y<=1 && (points[i].visibility??0)>=profile.minimumVisibility && (points[i].presence??1)>=profile.minimumPresence;
+              for (const { start: a, end: b } of Landmarker.POSE_CONNECTIONS) {
                 if (!visible(a) || !visible(b)) continue;
                 ctx.beginPath();ctx.moveTo(points[a].x * canvas.width, points[a].y * canvas.height);ctx.lineTo(points[b].x * canvas.width, points[b].y * canvas.height);ctx.stroke();
               }
-              for (const i of profile.requiredJoints) {
+              for (let i=0; i<points.length; i++) {
                 const p = points[i];
                 if (!visible(i)) continue;
                 ctx.fillStyle = "#fff";ctx.beginPath();ctx.arc(p.x*canvas.width,p.y*canvas.height,6,0,Math.PI*2);ctx.fill();

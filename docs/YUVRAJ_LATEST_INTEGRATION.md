@@ -1,3 +1,5 @@
+> Current testbench measurement update (2026-11-08): live camera reps, phase and hold duration now come from the local state machine, with a 200 ms target dwell and direction-aware −15°/+30° tolerance. Gemini is optional feedback wording only; historical Gemini-analysis descriptions below describe earlier revisions. See `docs/REHAB.md` and `Pdetails.md`.
+
 > For the repaired start/calibration flow and current runtime camera adaptation, see [EXERCISE_FLOW_REPAIR.md](EXERCISE_FLOW_REPAIR.md).
 
 # Latest Yuvraj source integration
@@ -12,25 +14,27 @@ The complete 252-file tracked tree is retained unchanged in `references/yuvraj/c
 
 ## Runtime integration
 
-The new `packages/yuvraj-integration/` layer imports Yuvraj's original camera hook/model list, provider/prompts, request schemas, and session service directly from the preserved source. It composes the original service through its supplied `CvStore` interface. Panda's camera presentation remains in `packages/rehab-bridge/GuidedWorkspace.tsx`; its orchestration now follows the new automatic calibration and Gemini analysis flow.
+The new `packages/yuvraj-integration/` layer imports Yuvraj's original camera hook/model list, provider/prompts, request schemas, and session service directly from the preserved source. It composes the original service through its supplied `CvStore` interface. Panda's camera presentation remains in `packages/rehab-bridge/GuidedWorkspace.tsx`. The current local flow uses manual reference capture and provider-assisted movement analysis.
 
 Included behavior:
 
-- Lite, Full and Heavy pose-model selection; changes stop the camera and reset references. Lite stays bundled; Full/Heavy use Yuvraj's versioned Google URLs.
-- Automatic Gemini calibration from transient 3–8-frame landmark windows. The UI follows Yuvraj's three-check, high-confidence, stable-reference settling process; manual overrides remain available.
+- The connected patient flow uses the Heavy pose model without a selector. Lite stays bundled; Full/Heavy use Yuvraj's versioned Google asset URLs.
+- Manual calibration only: capture the resting position and comfortable target from valid local tracking. Automatic calibration requests are rejected before any provider call; the preserved source remains unchanged.
 - Ordered 1–2 second pose batches analyzed by the original Gemini implementation. Camera-counted sets use Gemini cumulative estimates; deterministic reducers remain for explicitly simulated traces and confirmed static holds.
 - Calibration and movement cues are fetched by ID from the owner service before Panda speaks or remembers them. Calibration/movement source attribution, confidence and progress remain in patient context. Repeated or expired cues do not replay over the patient.
 - The latest server counts feed the existing canonical report, Panda's feelings/pain review, and Care report acknowledgement. `analysisMethod: gemini_landmark_analysis` identifies the new estimates without changing legacy report APIs.
 
 The adapter adds authenticated patient scope, patient-only writes, atomic captured Care references, the existing Postgres/JSON store boundary, and protection against late analysis crossing a pause/control revision. It sanitizes upstream provider failures and preserves earlier accepted progress. Failed/incomplete analysis remains partial or unavailable rather than generating successful measurements. Raw images/audio are never sent to Gemini by the pose flow, and raw landmark frames are not persisted. Small derived summaries and model working memory are stored in the patient-scoped owner record.
 
-Server startup normalizes default Rehab model/mode settings around existing Panda Gemini credentials. Explicit Rehab settings win. No new API key is needed. Provider limits remain bounded; pose requests use their own bucket so they do not consume Panda's conversational allowance. Production CSP permits the selected model assets and WebAssembly. No credentials are included in browser code.
+Panda and Rehab use `gemini-3.5-flash-lite` with separate `PANDA_GEMINI_API_KEY` and `REHAB_GEMINI_API_KEY` credentials. Neither app switches models automatically. The shared fetch helper permits one Google model request at a time per key across local app processes and holds that slot until the full response is received. Calibration uses no provider. Production CSP permits the selected model assets and WebAssembly. No credentials are included in browser code.
 
 New connected endpoints are `/rehab/api/cv/v1/calibrate`, `/calibrations/:id`, `/sessions/:id/analyze` and `/sessions/:id/analysis`. `guided_calibration` and `guided_analysis` are additive ID-based bridge events. Existing plan, task, help, legacy Rehab report and acknowledgement APIs remain available.
 
 The original Cloudflare/phone-hosting code is retained for reference; it was not merged into Panda's hosting configuration. EHR and deployment remain deferred. No hosted database migration or Render deployment was performed.
 
 ## Review findings and validation
+
+The results below describe the imported revision before the manual-only calibration change. Current checks for the manual flow and request serialization are recorded in `Pdetails.md` and `updates.md`.
 
 - The unchanged upstream suite passes **47/48** CV tests. One old assertion expects `/untracked/` when submitting a camera repetition event. The new service correctly rejects that event with `GEMINI_ANALYSIS_REQUIRED`, because real camera counts now come from `/analyze`. The original assertion is preserved. Panda's separate regression covers the new rejection and the simulated overshoot/pause behavior.
 - The upstream provider remains unmodified. Its generated counts and calibration are demonstration estimates; physical camera accuracy and clinical correctness have not been validated here.

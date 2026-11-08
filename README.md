@@ -66,7 +66,7 @@ Local demo mode uses fixed synthetic identities and local JSON/SQLite. Productio
 
 Edit root `.env.local`; the root runner loads it for all apps. Never use `NEXT_PUBLIC_` for credentials.
 
-- Gemini track: `PANDA_AI_MODE=gemini`, `PANDA_GEMINI_API_KEY`, `PANDA_GEMINI_MODEL` (an available model ID, without `models/`).
+- Gemini track: `PANDA_AI_MODE=gemini` and `PANDA_GEMINI_API_KEY`. Panda and connected Rehab are pinned to `gemini-3.5-flash-lite`; they keep separate API keys.
 - Optional OpenAI alternative: `PANDA_AI_MODE=openai`, `PANDA_OPENAI_API_KEY`, `PANDA_OPENAI_MODEL`.
 - ElevenLabs track: `PANDA_TTS_MODE=elevenlabs`, `PANDA_ELEVENLABS_API_KEY`, `PANDA_ELEVENLABS_VOICE_ID`, `PANDA_ELEVENLABS_MODEL_ID`.
 - Recorded STT: `PANDA_STT_MODEL=scribe_v2` by default, using the same server-side ElevenLabs key.

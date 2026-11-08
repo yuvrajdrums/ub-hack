@@ -1,15 +1,11 @@
-import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
-  cvService as upstreamService,
+  cvSessionRuntime as upstreamService,
   type CvStoreData as UpstreamState,
   type CvStore,
-} from "../../references/yuvraj/camera-to-text-371198e/source/apps/rehab/src/server/cv/service";
+} from "./session-runtime";
 import { DomainError as UpstreamError } from "../../references/yuvraj/camera-to-text-371198e/source/packages/platform/json-store";
-import {
-  CvRepAnalysisInputSchema,
-  CvCalibrationAssistInputSchema,
-} from "./contracts";
+import type { CvRepAnalysisResponse } from "./contracts";
 import { domainStore } from "../platform/domain-store";
 import { DomainError, dataFile } from "../platform/json-store";
 import { connected, getCare } from "../platform/peers";
@@ -20,7 +16,11 @@ import type {
   CvSession,
   CvReport,
   CvCareReference,
+  CvExerciseId,
 } from "../contracts/rehab-cv";
+import { CvStartSchema } from "../contracts/rehab-cv";
+import { resolvePlanExercise } from "../rehab-bridge/plan-assignment";
+import { geminiFlashFetch } from "./gemini-model.mjs";
 
 type Metadata = {
   careReference?: CvCareReference;
@@ -42,12 +42,31 @@ export type CalibrationRecord = {
   acceptedAt: string;
   careReference?: CvCareReference;
 };
-type Guard = {
-  sessionId: string;
-  owner: string;
-  revision: number;
-  lastOffset: number;
-};
+function enforceAssignedExercise(
+  care: CareSnapshot,
+  owner: string,
+  exerciseId: CvExerciseId,
+  side: "left" | "right",
+) {
+  if (care.patientId !== owner || care.plan?.status !== "approved")
+    throw new DomainError(
+      "FORBIDDEN",
+      "A current approved patient context is required.",
+      403,
+    );
+  const resolved = resolvePlanExercise(care.plan);
+  if (!resolved.assignment)
+    throw new DomainError("PLAN_EXERCISE_UNAVAILABLE", resolved.message, 409);
+  if (
+    resolved.assignment.exerciseId !== exerciseId ||
+    resolved.assignment.side !== side
+  )
+    throw new DomainError(
+      "PLAN_EXERCISE_MISMATCH",
+      "This set must use the exercise and side in the current approved plan.",
+      409,
+    );
+}
 export function cvService(
   file = dataFile("rehab-cv"),
   options: {
@@ -63,9 +82,7 @@ export function cvService(
       sessions: [],
       receipts: {},
     }));
-  const binding = new AsyncLocalStorage<CvCareReference | undefined>(),
-    analysisGuard = new AsyncLocalStorage<Guard>();
-  const now = options.now || (() => new Date());
+  const binding = new AsyncLocalStorage<CvCareReference | undefined>();
   const store: CvStore = {
     snapshot: () => backing.snapshot(),
     update: (fn) =>
@@ -76,67 +93,48 @@ export function cvService(
           s.analysisBatchSequence ??= 0;
         }
         const ids = new Set(state.sessions.map((s) => s.id));
-        const guard = analysisGuard.getStore();
-        if (guard) {
-          const s = state.sessions.find(
-            (s) => s.id === guard.sessionId && s.owner === guard.owner,
-          );
-          if (
-            !s ||
-            s.status !== "running" ||
-            s.sessionControlRevision !== guard.revision
-          )
-            throw new DomainError(
-              "STALE_ANALYSIS",
-              "The exercise changed while analysis was running. Previous counts were kept.",
-              409,
-            );
-        }
         const result = await fn(state);
         for (const s of state.sessions)
           if (!ids.has(s.id)) {
             const ref = binding.getStore();
             if (ref) s.careReference = ref;
             if (s.evidence === "camera_estimated")
-              s.analysisMethod = "gemini_landmark_analysis";
+              s.measurementMethod = "local_pose_engine";
           }
-        if (guard) {
-          const s = state.sessions.find((s) => s.id === guard.sessionId)!;
-          s.analysisAcceptedAt = now().toISOString();
-          s.analysisControlRevision = guard.revision;
-          s.analysisLastOffsetMs = guard.lastOffset;
-        }
         return result;
       }),
   };
-  const upstream = upstreamService(file, {
-    ...options,
-    store,
-    fetcher: pandaCoachingFetcher(options.fetcher),
-  });
+  const sourceFetcher = options.fetcher || fetch;
+  const providerFetcher: typeof fetch = (input, init) => {
+    if (typeof input !== "string" || !input.startsWith("https://generativelanguage.googleapis.com/v1beta/models/"))
+      return sourceFetcher(input, init);
+    const apiKey = process.env.REHAB_GEMINI_API_KEY || "";
+    if (!apiKey)
+      throw new DomainError(
+        "NOT_CONFIGURED",
+        "Set REHAB_GEMINI_API_KEY on the Rehab server.",
+        503,
+      );
+    const headers = new Headers(init?.headers);
+    headers.set("x-goog-api-key", apiKey);
+    return geminiFlashFetch(
+      input,
+      { ...init, headers },
+      apiKey,
+      sourceFetcher,
+    );
+  };
+  const upstream = upstreamService(file, { ...options, fetcher: pandaCoachingFetcher(providerFetcher), store });
   async function safely<T>(
     operation: () => Promise<T>,
-    provider?: "calibration" | "analysis",
   ): Promise<T> {
     try {
       return await operation();
     } catch (error) {
       if (error instanceof DomainError) throw error;
       if (error instanceof UpstreamError) {
-        if (error.code === "GEMINI_CALIBRATION_FAILED")
-          throw new DomainError(
-            error.code,
-            "Gemini calibration is unavailable. Retry or use the manual references.",
-            503,
-          );
         throw new DomainError(error.code, error.message, error.status);
       }
-      if (provider)
-        throw new DomainError(
-          "GEMINI_UNAVAILABLE",
-          `Gemini ${provider} is unavailable. Your previous measurements were kept.`,
-          503,
-        );
       throw error;
     }
   }
@@ -178,20 +176,14 @@ export function cvService(
   return {
     async start(owner: string, raw: unknown) {
       requireRole("patient");
+      const input = CvStartSchema.parse(raw);
       const care = options.care
         ? await options.care()
         : connected()
           ? await getCare()
           : undefined;
-      if (
-        care &&
-        (care.patientId !== owner || care.plan?.status !== "approved")
-      )
-        throw new DomainError(
-          "FORBIDDEN",
-          "A current approved patient context is required.",
-          403,
-        );
+      if (care)
+        enforceAssignedExercise(care, owner, input.exerciseId, input.side);
       const ref = care?.plan
         ? {
             patientId: care.patientId,
@@ -200,7 +192,7 @@ export function cvService(
           }
         : undefined;
       const result = await binding.run(ref, () =>
-        safely(() => upstream.start(owner, raw)),
+        safely(() => upstream.start(owner, input)),
       );
       return decorate(await stored(owner, result.id), result);
     },
@@ -245,61 +237,13 @@ export function cvService(
       requireRole("patient");
       return safely(() => upstream.generate(owner, id, eventId, raw));
     },
-    async calibrate(owner: string, raw: unknown) {
+    async calibrate(_owner: string, _raw: unknown): Promise<import("./contracts").CvCalibrationAssistResponse> {
       requireRole("patient");
-      const input = CvCalibrationAssistInputSchema.parse(raw);
-      const key = `${owner}:calibration:${input.requestId}`;
-      const fingerprint = createHash("sha256")
-        .update(JSON.stringify(input))
-        .digest("hex");
-      const old = (await backing.snapshot()).receipts[key];
-      if (old) {
-        if (old.fingerprint !== fingerprint)
-          throw new DomainError(
-            "CONFLICT",
-            "Calibration request changed.",
-            409,
-          );
-        return (old.result as CalibrationRecord).result;
-      }
-      const care = options.care
-        ? await options.care()
-        : connected()
-          ? await getCare()
-          : undefined;
-      if (
-        care &&
-        (care.patientId !== owner || care.plan?.status !== "approved")
-      )
-        throw new DomainError(
-          "FORBIDDEN",
-          "A current approved patient context is required.",
-          403,
-        );
-      const result = await safely(
-        () => upstream.calibrate(owner, input),
-        "calibration",
+      throw new DomainError(
+        "MANUAL_CALIBRATION_REQUIRED",
+        "Automatic calibration is disabled. Capture your resting position and comfortable target in the exercise view.",
+        409,
       );
-      const record: CalibrationRecord = {
-        calibrationId: input.requestId,
-        result,
-        exerciseId: input.exerciseId,
-        side: input.side,
-        acceptedAt: now().toISOString(),
-        ...(care?.plan
-          ? {
-              careReference: {
-                patientId: care.patientId,
-                planId: care.plan.id,
-                planVersion: care.plan.version,
-              },
-            }
-          : {}),
-      };
-      await backing.update((state) => {
-        state.receipts[key] = { fingerprint, result: record };
-      });
-      return result;
     },
     async calibration(owner: string, id: string) {
       const receipt = (await backing.snapshot()).receipts[
@@ -313,48 +257,10 @@ export function cvService(
         );
       return receipt.result as CalibrationRecord;
     },
-    async analyze(owner: string, id: string, raw: unknown) {
+    async analyze(owner: string, id: string, _raw: unknown): Promise<Omit<CvRepAnalysisResponse, "session"> & { session: CvSession }> {
       requireRole("patient");
-      const input = CvRepAnalysisInputSchema.parse(raw);
-      const s = await stored(owner, id);
-      if (input.batchSequence > (s.analysisBatchSequence ?? 0)) {
-        const times = input.frames.map((f) => f.offsetMs);
-        if (
-          times.some((time, i) => i > 0 && time <= times[i - 1]) ||
-          times[0] <= (s.analysisLastOffsetMs ?? -1)
-        )
-          throw new DomainError(
-            "TIME_ORDER",
-            "Use fresh, ordered landmark frames.",
-            400,
-          );
-      }
-      let result;
-      try {
-        result = await analysisGuard.run(
-          {
-            sessionId: id,
-            owner,
-            revision: s.sessionControlRevision,
-            lastOffset: input.frames.at(-1)!.offsetMs,
-          },
-          () => safely(() => upstream.analyze(owner, id, input), "analysis"),
-        );
-      } catch (error) {
-        await backing.update((state) => {
-          const current = state.sessions.find(
-            (s) => s.id === id && s.owner === owner,
-          );
-          if (current)
-            (current as CvStoreData["sessions"][number]).analysisIncomplete =
-              true;
-        });
-        throw error;
-      }
-      return {
-        ...result,
-        session: decorate(await stored(owner, id), result.session),
-      };
+      await stored(owner, id);
+      throw new DomainError("LOCAL_MEASUREMENTS_ONLY", "Camera sets measure locally. Recover any older unfinished set before starting a new local set.", 409);
     },
     async analysis(owner: string, id: string) {
       const s = await stored(owner, id);

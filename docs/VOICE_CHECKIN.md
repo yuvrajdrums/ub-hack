@@ -48,7 +48,7 @@ The guided exercise flow remains within Panda's mounted React tree, so audio can
 
 Keep existing root `.env.local`; never overwrite it when following a quickstart.
 
-- Gemini: `PANDA_AI_MODE=gemini`, `PANDA_GEMINI_API_KEY`, `PANDA_GEMINI_MODEL`.
+- Gemini: `PANDA_AI_MODE=gemini` and `PANDA_GEMINI_API_KEY`. Panda and connected Rehab use `gemini-3.5-flash-lite` with separate API keys. Neither switches models automatically.
 - ElevenLabs: `PANDA_TTS_MODE=elevenlabs`, `PANDA_ELEVENLABS_API_KEY`, `PANDA_ELEVENLABS_VOICE_ID`, `PANDA_ELEVENLABS_MODEL_ID`.
 - Recorded STT uses that same ElevenLabs key; `PANDA_STT_MODEL` defaults to `scribe_v2`.
 

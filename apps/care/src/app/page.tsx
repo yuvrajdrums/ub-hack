@@ -7,6 +7,7 @@ import type { CareSnapshot, ExerciseReport } from "@contracts";
 import { patientPlan, type PatientPlanItem } from "./patient-plan";
 import styles from "./care.module.css";
 import { PATIENT_ROUTES } from "../../../../packages/ui/patient-navigation";
+import { useLoggedFailure } from "../../../../packages/ui/client-feedback";
 
 type IconName =
   | "pill"
@@ -136,6 +137,9 @@ export default function Care() {
   const [sending, setSending] = useState(false);
   const [requestError, setRequestError] = useState("");
   const [notice, setNotice] = useState("");
+  useLoggedFailure("Care plan", error);
+  useLoggedFailure("Care reports", reportErrors.join("; "));
+  useLoggedFailure("Care request", requestError);
   const refreshInFlight = useRef<Promise<void> | null>(null);
   const pendingRequest = useRef<{ requestId: string; quote: string } | null>(
     null,
@@ -332,35 +336,16 @@ export default function Care() {
             </button>
           </div>
           <p className={styles.syncNote}>
-            {error
-              ? "Updates paused · showing the last information loaded"
-              : lastUpdated
-                ? "Your plan stays up to date with your care team"
-                : "Connecting to your care"}
+            {lastUpdated ? "Your care plan" : "Connecting to your care"}
           </p>
         </div>
-        {error && (
-          <div className={styles.error} role="alert">
-            {error}{" "}
-            <button
-              type="button"
-              onClick={() => void load()}
-              disabled={refreshing}
-            >
-              Try again
-            </button>
-          </div>
-        )}
+
         {loading && (
           <div className={styles.loading} role="status">
             Gathering your care plan…
           </div>
         )}
-        {!loading && !data && (
-          <p className={styles.empty}>
-            Your care information is unavailable. Try refreshing to reconnect.
-          </p>
-        )}
+
         {data && (
           <>
             {plan?.demoOnly && (
@@ -550,11 +535,7 @@ export default function Care() {
                         <Icon name="arrow" />
                       </button>
                     </div>
-                    {requestError && (
-                      <p className={styles.error} role="alert">
-                        {requestError}
-                      </p>
-                    )}
+
                   </form>
                 )}
                 {!requestList.length ? (
@@ -614,18 +595,7 @@ export default function Care() {
                 <p className={styles.sectionCopy}>
                   The movements you’ve made, and the progress you’ve recorded.
                 </p>
-                {reportErrors.map((message) => (
-                  <p className={styles.error} role="alert" key={message}>
-                    {message}{" "}
-                    <button
-                      type="button"
-                      onClick={() => void load()}
-                      disabled={refreshing}
-                    >
-                      Retry
-                    </button>
-                  </p>
-                ))}
+
                 {!exerciseReports.length && !reportErrors.length && (
                   <div className={styles.emptyState}>
                     <span className={styles.emptyIcon}>

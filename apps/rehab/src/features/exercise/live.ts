@@ -24,9 +24,7 @@ export function createLiveEngineConfig(exerciseId:ExerciseId,options:{
     maximumSampleGapMs:LIVE_DETECTOR.maximumSampleGapMs,
     ...(ranges?{startRangeDeg:ranges.startRangeDeg,targetRangeDeg:ranges.targetRangeDeg}:{}),
   };
-  // A seated extension reference is a comfortable minimum, not a narrow band
-  // that rejects a fully straight knee. 180° is the geometry's upper bound.
-  if(ranges && (exerciseId==="seated-knee-extension" || exerciseId==="seated-knee-flexion-extension"))
-    config.targetRangeDeg=[ranges.targetRangeDeg[0],180];
+  // deriveCalibration applies direction-aware -15°/+30° target tolerances,
+  // with a physical 0°–180° cap and a non-overlapping start region.
   return config;
 }

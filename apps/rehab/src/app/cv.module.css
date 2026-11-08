@@ -34,6 +34,7 @@
 .outline { background:white !important; border:1px solid var(--line) !important; color:var(--green) !important; }
 .setup { padding:22px; display:grid; gap:18px; }
 .fieldRow { display:grid; grid-template-columns:1fr 105px; gap:12px; }
+.workspace .fieldRow label > span { display:flex; align-items:center; box-sizing:border-box; min-height:46px; border:1px solid var(--line); border-radius:10px; padding:10px 12px; background:#f7f9f4; color:var(--ink); font-size:14px; font-weight:500; }
 .configNote { border-left:3px solid #bfd6a5; background:#f5f8ee; padding:11px 13px; font-size:12px; line-height:1.6; color:var(--muted); }
 .setup h3 { margin:0 0 4px; }
 .stepLabel { text-transform:uppercase; letter-spacing:1.4px; color:var(--muted); font-size:10px; margin-bottom:8px; font-weight:700; }

@@ -12,7 +12,6 @@ async function configured(
     original = globalThis.fetch;
   process.env.PANDA_AI_MODE = mode;
   process.env.PANDA_GEMINI_API_KEY = "fake-test-key";
-  process.env.PANDA_GEMINI_MODEL = "test-model";
   process.env.PANDA_OPENAI_API_KEY = "fake-test-key";
   process.env.PANDA_OPENAI_MODEL = "test-model";
   globalThis.fetch = async () => Response.json(result, { status });

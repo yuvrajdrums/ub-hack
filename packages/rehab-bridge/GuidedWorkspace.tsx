@@ -1,15 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { settleCalibration, type CalibrationCandidate } from "./calibration-settling";
+import { logClientFailure, useLoggedFailure, useMinimumDisplay } from "../ui/client-feedback";
 import type { ExerciseRuntime, ExerciseControl } from "../contracts/exercise-runtime";
-import type {
-  CvCalibrationAssistInput,
-  CvCalibrationAssistResponse,
-  CvRepAnalysis,
-  CvRepAnalysisInput,
-  CvRepAnalysisResponse,
-} from "../yuvraj-integration/contracts";
 import type {
   CvChanges,
   CvContext,
@@ -22,11 +15,6 @@ import type {
   CvTiming,
 } from "../contracts/rehab-cv";
 import { usePoseCamera, type CameraFrame } from "../yuvraj-integration/camera";
-import {
-  POSE_MODELS,
-  poseModelFor,
-  type PoseModelId,
-} from "../yuvraj-integration/camera";
 import { missingTrackingJoint, exerciseTrackingProfile } from "../../apps/rehab/src/features/camera/tracking-profile";
 import {
   advanceExercise,
@@ -45,10 +33,10 @@ import {
   measurePose,
   timingSummary,
   type AttemptOutcome,
-  type CalibrationSample,
   type EngineConfig,
   type ExerciseState,
   type TimingState,
+  type CalibrationSample,
 } from "../../apps/rehab/src/features/exercise";
 import {
   cvApi,
@@ -63,14 +51,7 @@ import immersive from "./guided-screen.module.css";
 
 type Run = {
   simulated: boolean;
-  poseFrames: CvRepAnalysisInput["frames"];
-  lastPoseFrameAt: number;
-  analysisBatchSequence: number;
-  analysisAt: number;
-  analysisPromise: Promise<void> | null;
-  analysisMissing: boolean;
-  analysisRetryAt: number;
-  analysisFailures: number;
+  measurementIncomplete: boolean;
   transport: SessionTransport;
   config: EngineConfig;
   engine: ExerciseState;
@@ -116,9 +97,6 @@ const clock = (ms: number) =>
   `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
 const seconds = (ms: number) => (ms / 1000).toFixed(1);
 
-type CalibrationPose = "rest" | "comfortable_target";
-
-
 export default function GuidedWorkspace({
   onEvent,
   onCoachingPause,
@@ -127,6 +105,7 @@ export default function GuidedWorkspace({
   companion,
   conversation,
   pandaMessage,
+  pandaCue,
   onExit,
   pauseRequested = false,
   canStart = true,
@@ -140,6 +119,7 @@ export default function GuidedWorkspace({
   companion?: ReactNode;
   conversation?: ReactNode;
   pandaMessage?: string;
+  pandaCue?: { eventId: string; text: string; expiresAt: string | null } | null;
   onExit?: () => void;
   pauseRequested?: boolean;
   canStart?: boolean;
@@ -148,7 +128,6 @@ export default function GuidedWorkspace({
 } = {}) {
   const callbacks = useRef({ onEvent, onAskPanda, onCoachingPause, onRuntime });
   callbacks.current = { onEvent, onAskPanda, onCoachingPause, onRuntime };
-  const [setupOpen, setSetupOpen] = useState(false);
   const [context, setContext] = useState<CvContext | null>(null);
   const [exercise, setExercise] = useState<CvExerciseId>(
     "seated-knee-extension",
@@ -158,17 +137,6 @@ export default function GuidedWorkspace({
     start: number | null;
     target: number | null;
   }>({ start: null, target: null });
-  const [poseModel, setPoseModel] = useState<PoseModelId>("lite");
-  const [calibrationSource, setCalibrationSource] = useState<{
-    start: "Gemini" | "Manual" | null;
-    target: "Gemini" | "Manual" | null;
-  }>({ start: null, target: null });
-  const [calibrationBusy, setCalibrationBusy] = useState<"auto" | null>(null);
-  const [calibrationConsensus, setCalibrationConsensus] = useState<{
-    position: CalibrationPose;
-    count: number;
-  } | null>(null);
-  const [repAnalysis, setRepAnalysis] = useState<CvRepAnalysis | null>(null);
   const [measurement, setMeasurement] = useState(empty);
   const [session, setSession] = useState<CvSession | null>(null);
   const [engine, setEngine] = useState(createExerciseState);
@@ -182,8 +150,9 @@ export default function GuidedWorkspace({
   });
   const [feedback, setFeedback] = useState<CvFeedbackText | null>(null);
   const [caption, setCaption] = useState(
-    "Set up your camera, then capture two comfortable reference positions.",
+    "Turn on your camera and follow the guidance for your assigned exercise.",
   );
+  const [pandaCueExpired, setPandaCueExpired] = useState(false);
   const [notice, setNotice] = useState(
     "Loading your standalone demonstration…",
   );
@@ -192,8 +161,6 @@ export default function GuidedWorkspace({
   const [startRequested, setStartRequested] = useState(false);
   const lastControl = useRef<string | undefined>(undefined);
   const timerTick = useRef<() => void>(() => {});
-  const latestMeasurement = useRef(empty);
-  const calibrationRetryAt = useRef(0), calibrationFailures = useRef(0);
   const [paused, setPaused] = useState(false);
   const [trace, setTrace] = useState(false);
   const [guided, setGuided] = useState(false);
@@ -205,14 +172,6 @@ export default function GuidedWorkspace({
   const samples = useRef<CalibrationSample[]>([]);
   const filter = useRef(createAngleFilter());
   const lastFrameAt = useRef(-Infinity);
-  const calibrationPoseFrames = useRef<CvCalibrationAssistInput["frames"]>([]),
-    calibrationPoseBaseAt = useRef(0),
-    calibrationPoseLastAt = useRef(-Infinity);
-  const calibrationAutoBusy = useRef(false),
-    calibrationAutoAt = useRef(-Infinity),
-    calibrationGeneration = useRef(0);
-  const calibrationMemory = useRef<CvCalibrationAssistResponse | null>(null),
-    calibrationCandidate = useRef<CalibrationCandidate | null>(null);
   const selected = useRef({ exercise, side });
   selected.current = { exercise, side };
   const traceTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -223,11 +182,31 @@ export default function GuidedWorkspace({
     ) => Promise<void>
   >(async () => {});
   const mounted = useRef(true);
+  useEffect(() => {
+    setPandaCueExpired(false);
+    if (!pandaCue?.expiresAt) return;
+    const delay = Date.parse(pandaCue.expiresAt) - Date.now();
+    if (delay <= 0) {
+      setPandaCueExpired(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setPandaCueExpired(true), delay);
+    return () => window.clearTimeout(timer);
+  }, [pandaCue?.eventId, pandaCue?.expiresAt]);
   const displayedFeedback = useRef<CvFeedbackText | null>(null);
   const configuration = context?.exercises.find(
     (v) => v.exerciseId === exercise,
   );
-  latestMeasurement.current = measurement;
+  const assignmentResolution = context?.planExercise;
+  const assignedExercise = assignmentResolution?.assignment ?? null;
+  const planDriven =
+    presentation === "camera" ||
+    (context !== null && context.mode !== "standalone_demo");
+  const assignmentMessage =
+    context === null
+      ? "Loading your approved exercise from your care plan…"
+      : assignmentResolution?.message ||
+        "No supported exercise and working side were found in the approved plan.";
   const staticQuads = exercise === "static-quads";
   const trackingProfile = exerciseTrackingProfile(exercise, side);
 
@@ -298,6 +277,7 @@ export default function GuidedWorkspace({
     r.transport.enqueue(body, summary.elapsedTimeMs);
   }
   function saveAttempt(r: Run, outcome: AttemptOutcome, now: number) {
+    if (outcome.invalidated) r.measurementIncomplete = true;
     if (!outcome.invalidated)
       setAttemptNote(
         outcome.qualifying
@@ -325,6 +305,7 @@ export default function GuidedWorkspace({
       "incomplete_target",
       "knee_bending",
       "target_overshoot",
+      "movement_too_fast",
     ];
     enqueue(
       r,
@@ -336,7 +317,7 @@ export default function GuidedWorkspace({
           ? {
               reason: (allowed.includes(reason)
                 ? reason
-                : "tracking_lost") as "tracking_lost",
+                : "tracking_lost") as Extract<MeasurementBody, { type: "attempt_finalized" }>["reason"],
             }
           : {}),
       },
@@ -360,8 +341,7 @@ export default function GuidedWorkspace({
     tick(r, now);
     if (
       r.paused ||
-      r.transport.session.exerciseId === "static-quads" ||
-      !r.simulated
+      r.transport.session.exerciseId === "static-quads"
     )
       return;
     const result = advanceExercise(
@@ -435,68 +415,6 @@ export default function GuidedWorkspace({
       frame.timestampMs,
       frame.receivedAtMs,
     );
-    const active = run.current;
-    if (
-      !active &&
-      valid &&
-      angle !== null &&
-      frame.timestampMs - calibrationPoseLastAt.current >= 300
-    ) {
-      if (
-        calibrationPoseFrames.current.length &&
-        frame.timestampMs - calibrationPoseLastAt.current > 700
-      )
-        calibrationPoseFrames.current = [];
-      if (!calibrationPoseFrames.current.length)
-        calibrationPoseBaseAt.current = frame.timestampMs;
-      calibrationPoseLastAt.current = frame.timestampMs;
-      const landmarks = frame.landmarks.map((point) => [
-        point.x,
-        point.y,
-        point.z,
-        point.visibility ?? null,
-        point.presence ?? null,
-      ]) as CvCalibrationAssistInput["frames"][number]["landmarks"];
-      calibrationPoseFrames.current = [
-        ...calibrationPoseFrames.current,
-        {
-          offsetMs: Math.max(
-            0,
-            frame.timestampMs - calibrationPoseBaseAt.current,
-          ),
-          personCount: frame.personCount,
-          landmarks,
-        },
-      ].slice(-8);
-    }
-    if (
-      active &&
-      !active.simulated &&
-      !active.paused &&
-      !active.terminal &&
-      !active.finishing &&
-      active.transport.session.evidence === "camera_estimated" &&
-      frame.timestampMs - active.lastPoseFrameAt >= 350 &&
-      frame.landmarks.length === 33
-    ) {
-      active.lastPoseFrameAt = frame.timestampMs;
-      const landmarks = frame.landmarks.map((point) => [
-        point.x,
-        point.y,
-        point.z,
-        point.visibility ?? null,
-        point.presence ?? null,
-      ]) as CvRepAnalysisInput["frames"][number]["landmarks"];
-      active.poseFrames.push({
-        offsetMs: Math.max(0, frame.timestampMs - active.start),
-        personCount: frame.personCount,
-        landmarks,
-      });
-      if (active.poseFrames.length > 24) {
-        active.poseFrames = active.poseFrames.slice(-24);
-        active.analysisMissing = true;
-      }
-    }
   }
   const camera = usePoseCamera(
     trackingProfile,
@@ -516,70 +434,48 @@ export default function GuidedWorkspace({
               : "tracking_lost",
         );
     },
-    poseModel,
+    "heavy",
   );
   const cameraWasTracking = useRef(false);
+  useLoggedFailure("Rehab session", error);
+  useLoggedFailure("Rehab camera", camera.error);
+  useLoggedFailure("Rehab assignment", context && planDriven && !assignedExercise ? assignmentMessage : "");
+  const noticeIsFailure = /unavailable|failed|couldn.t|could not|error|reconnect|retry|delayed|ended|hidden|changed/i.test(notice);
+  useLoggedFailure("Rehab status", noticeIsFailure ? notice : "");
   useEffect(() => {
     if (cameraWasTracking.current && camera.status !== "tracking")
       callbacks.current.onCoachingPause?.();
     cameraWasTracking.current = camera.status === "tracking";
   }, [camera.status]);
 
-  async function analyzePendingPose(r: Run, flush = false): Promise<void> {
-    if (performance.now() < r.analysisRetryAt) return;
-    if (r.analysisPromise) {
-      if (flush) await r.analysisPromise;
-      else return;
-    }
-    if (performance.now() < r.analysisRetryAt) return;
-    if (!context || !r.poseFrames.length || (!flush && r.poseFrames.length < 3))
+  useEffect(() => {
+    if (!planDriven) return;
+    if (!assignedExercise) {
+      if (!run.current && camera.status !== "off") camera.stop();
       return;
-    const frames = r.poseFrames.splice(0, 8),
-      batchSequence = r.analysisBatchSequence + 1;
-    const work = (async () => {
-      try {
-        const result = await cvApi<CvRepAnalysisResponse>(
-          `/sessions/${r.transport.session.id}/analyze`,
-          { requestId: crypto.randomUUID(), batchSequence, frames },
-          context.csrfToken,
-        );
-        r.analysisBatchSequence = result.batchSequence;
-        r.analysisFailures = 0;
-        r.analysisRetryAt = 0;
-        setRepAnalysis(result.analysis);
-        setSession(result.session);
-        if (run.current !== r || r.paused || r.terminal) return;
-        if (result.analysis.cue) setCaption(result.analysis.cue);
-        callbacks.current.onEvent?.({
-          version: "1.0.0",
-          type: "guided_analysis",
-          sessionId: r.transport.session.id,
-          batchSequence: result.batchSequence,
-        });
-        setNotice(
-          `Gemini analysis · ${Math.round(result.analysis.confidence * 100)}% confidence`,
-        );
-        setError("");
-      } catch (e) {
-        r.analysisMissing = true;
-        r.analysisFailures++;
-        r.analysisRetryAt =
-          performance.now() +
-          Math.min(30000, 1500 * 2 ** Math.min(5, r.analysisFailures));
-        callbacks.current.onCoachingPause?.();
-        setError(
-          "Movement analysis is unavailable. Previous counts are kept; missing movements will not be invented.",
-        );
-      }
-    })();
-    r.analysisPromise = work;
-    try {
-      await work;
-    } finally {
-      r.analysisPromise = null;
     }
-    if (flush && r.poseFrames.length) await analyzePendingPose(r, true);
-  }
+    if (run.current && !run.current.terminal) return;
+    if (
+      exercise === assignedExercise.exerciseId &&
+      side === assignedExercise.side
+    )
+      return;
+    if (camera.status !== "off") camera.stop();
+    lastFrameAt.current = -Infinity;
+    setExercise(assignedExercise.exerciseId);
+    setSide(assignedExercise.side);
+    resetCalibration();
+    setMeasurement(empty);
+    filter.current = createAngleFilter();
+    setFeedback(null);
+  }, [
+    planDriven,
+    assignedExercise?.exerciseId,
+    assignedExercise?.side,
+    exercise,
+    side,
+    camera.status,
+  ]);
 
   useEffect(() => {
     mounted.current = true;
@@ -605,28 +501,7 @@ export default function GuidedWorkspace({
   timerTick.current = () => {
       const now = performance.now();
       const r = run.current;
-      if (!r) {
-        if (
-          !trace &&
-          !staticQuads &&
-          !busy &&
-          !recovery &&
-          context?.gemini.mode === "controlled" &&
-          context.gemini.configured &&
-          camera.status === "tracking" &&
-          measurement.valid &&
-          liveFrameIsStale(lastFrameAt.current, now) === false &&
-          (calibration.start === null || calibration.target === null) &&
-          !calibrationAutoBusy.current &&
-          now >= calibrationRetryAt.current &&
-          now - calibrationAutoAt.current >= 1500
-        ) {
-          calibrationAutoAt.current = now;
-          void autoAnalyzeCalibration();
-        }
-        return;
-      }
-      if (r.terminal) return;
+      if (!r || r.terminal) return;
       if (
         !trace &&
         r.transport.session.exerciseId !== "static-quads" &&
@@ -640,7 +515,7 @@ export default function GuidedWorkspace({
           valid: false,
           reason: "frames_delayed",
         }));
-        if (r.simulated) {
+        {
           const invalid = invalidateExercise(
             r.engine,
             "sample_gap",
@@ -651,16 +526,6 @@ export default function GuidedWorkspace({
           if (invalid.attempt) saveAttempt(r, invalid.attempt, now);
         }
         setCaption(messageFor.TRACKING_LOST);
-      }
-      if (
-        !r.simulated &&
-        !r.paused &&
-        !r.finishing &&
-        r.poseFrames.length >= 3 &&
-        now - r.analysisAt >= 1500
-      ) {
-        r.analysisAt = now;
-        void analyzePendingPose(r);
       }
       const summary = tick(r, now);
       if (now - r.checkpointAt >= 1000) {
@@ -691,12 +556,10 @@ export default function GuidedWorkspace({
   function setCalibrationReference(
     which: "start" | "target",
     capturedAngle: number,
-    source: "Gemini" | "Manual",
   ) {
     const nextStart = which === "start" ? capturedAngle : calibration.start;
     const nextTarget = which === "target" ? capturedAngle : calibration.target;
     setCalibration((previous) => ({ ...previous, [which]: capturedAngle }));
-    setCalibrationSource((previous) => ({ ...previous, [which]: source }));
     setError("");
     if (
       nextStart !== null &&
@@ -708,7 +571,7 @@ export default function GuidedWorkspace({
       );
     else
       setNotice(
-        `${which === "start" ? "Resting" : "Comfortable target"} reference set to ${capturedAngle}° by ${source}. You can replace it before starting.`,
+        `${which === "start" ? "Resting" : "Comfortable target"} reference set to ${capturedAngle}°. You can replace it before starting.`,
       );
   }
   function capture(which: "start" | "target") {
@@ -718,7 +581,7 @@ export default function GuidedWorkspace({
       measurement.angle === null
     ) {
       setError(
-        `No current ${exercise === "straight-leg-raise" ? "leg elevation" : "knee angle"} is available. Keep the selected ${side} leg${exercise === "straight-leg-raise" ? " and torso" : ""} visible, then capture again.`,
+        `No current ${exercise === "straight-leg-raise" ? "leg elevation" : "knee angle"} is available. Keep your assigned ${side} leg${exercise === "straight-leg-raise" ? " and torso" : ""} visible, then capture again.`,
       );
       return;
     }
@@ -727,225 +590,27 @@ export default function GuidedWorkspace({
       setError("Hold this position still for one second, then save it again.");
       return;
     }
-    const capturedAngle = Math.round(stable.angleDeg);
-    calibrationGeneration.current++;
-    calibrationAutoBusy.current = false;
-    setCalibrationBusy(null);
-    calibrationCandidate.current = null;
-    calibrationMemory.current = null;
-    setCalibrationConsensus(null);
-    setCalibrationReference(which, capturedAngle, "Manual");
-  }
-  async function autoAnalyzeCalibration() {
-    if (exercise === "static-quads" || !context || calibrationAutoBusy.current)
-      return;
-    if (
-      camera.status !== "tracking" ||
-      liveFrameIsStale(lastFrameAt.current, performance.now()) ||
-      !measurement.valid
-    )
-      return;
-    const frames = calibrationPoseFrames.current.slice(-8);
-    if (
-      frames.length < 3 ||
-      frames.at(-1)!.offsetMs - frames[0].offsetMs < 500 ||
-      performance.now() - lastFrameAt.current > 700
-    )
-      return;
-    calibrationAutoBusy.current = true;
-    setCalibrationBusy("auto");
-    setError("");
-    const calibrationId = crypto.randomUUID();
-    const generation = calibrationGeneration.current,
-      exerciseAtRequest = exercise,
-      sideAtRequest = side;
-    try {
-      const result = await cvApi<CvCalibrationAssistResponse>(
-        "/calibrate",
-        {
-          requestId: calibrationId,
-          exerciseId: exercise,
-          side,
-          requestedPosition: calibration.start === null ? "rest" : "comfortable_target",
-          previous: calibrationMemory.current
-            ? {
-                detectedPosition: calibrationMemory.current.detectedPosition,
-                workingMemory: calibrationMemory.current.workingMemory,
-                startAngleDeg: calibration.start,
-                targetAngleDeg: calibration.target,
-              }
-            : null,
-          frames,
-        },
-        context.csrfToken,
-      );
-      if (
-        generation !== calibrationGeneration.current ||
-        selected.current.exercise !== exerciseAtRequest ||
-        selected.current.side !== sideAtRequest
-      )
-        return;
-      calibrationFailures.current = 0;
-      calibrationRetryAt.current = 0;
-      calibrationMemory.current = result;
-      callbacks.current.onEvent?.({
-        version: "1.0.0",
-        type: "guided_calibration",
-        calibrationId,
-      });
-      if (result.detectedPosition === "transition") {
-        calibrationCandidate.current = null;
-        setCalibrationConsensus(null);
-        if (result.cue) setNotice(result.cue);
-        return;
-      }
-      if (result.detectedPosition === "uncertain") {
-        if (result.cue) setNotice(result.cue);
-        return;
-      }
-      if (
-        result.detectedPosition === "comfortable_target" &&
-        calibration.start === null
-      ) {
-        calibrationCandidate.current = null;
-        setCalibrationConsensus(null);
-        setNotice(
-          "Gemini sees your extended position. Return to your comfortable resting position first.",
-        );
-        return;
-      }
-      const detected = result.detectedPosition;
-      const key = detected === "rest" ? "start" : "target";
-      if (
-        calibration[key] !== null ||
-        result.angleDeg === null ||
-        !result.accepted ||
-        !result.stable ||
-        result.confidence < 0.72
-      ) {
-        if (result.cue) setNotice(result.cue);
-        return;
-      }
-      const latest = latestMeasurement.current;
-      if (!latest.valid || latest.angle === null || liveFrameIsStale(lastFrameAt.current, performance.now()) || Math.abs(latest.angle - result.angleDeg) > 12) {
-        calibrationCandidate.current = null;
-        setCalibrationConsensus(null);
-        return;
-      }
-      const settled = settleCalibration(calibrationCandidate.current, result, performance.now(), evaluateCalibration(samples.current, {maximumSampleGapMs: LIVE_DETECTOR.maximumSampleGapMs}));
-      calibrationCandidate.current = settled.candidate;
-      setCalibrationConsensus(settled.candidate ? { position: detected, count: settled.candidate.angles.length } : null);
-      if (settled.angle === null) {
-        setNotice(`Hold your ${detected === "rest" ? "starting" : "comfortable end"} position. Checking ${settled.candidate?.angles.length ?? 0} of 3. You can also save it below.`);
-        return;
-      }
-      const settledAngle = settled.angle;
-      if (detected === "rest") {
-        setCalibrationReference("start", settledAngle, "Gemini");
-        calibrationCandidate.current = null;
-        setCalibrationConsensus(null);
-        setNotice(
-          "Rest position settled. Now move to your comfortable end position and hold it.",
-        );
-        return;
-      }
-      if (!deriveCalibration(calibration.start!, settledAngle)) {
-        setNotice(
-          "Gemini sees the end position, but it is too close to rest. Move farther within your comfort and hold again.",
-        );
-        return;
-      }
-      setCalibrationReference("target", settledAngle, "Gemini");
-      calibrationCandidate.current = null;
-      setCalibrationConsensus(null);
-      setNotice("Both references are settled. Review them or start your set.");
-    } catch (e) {
-      if (generation === calibrationGeneration.current) {
-        calibrationFailures.current++;
-        calibrationRetryAt.current = performance.now() + Math.min(30000, 2000 * 2 ** Math.min(4, calibrationFailures.current));
-        setError(
-          e instanceof Error
-            ? e.message
-            : "Automatic setup is unavailable. Hold each position and save it below to continue.",
-        );
-      }
-    } finally {
-      if (generation === calibrationGeneration.current) {
-        calibrationAutoBusy.current = false;
-        setCalibrationBusy(null);
-      }
-    }
+    setCalibrationReference(which, Math.round(stable.angleDeg));
   }
   function resetCalibration() {
-    calibrationGeneration.current++;
-    calibrationAutoBusy.current = false;
-    calibrationMemory.current = null;
-    calibrationCandidate.current = null;
-    calibrationAutoAt.current = -Infinity;
-    calibrationRetryAt.current = 0;
-    calibrationFailures.current = 0;
-    setCalibrationBusy(null);
-    setCalibrationConsensus(null);
+    samples.current = [];
     setCalibration({ start: null, target: null });
-    setCalibrationSource({ start: null, target: null });
-    calibrationPoseFrames.current = [];
-    calibrationPoseLastAt.current = -Infinity;
   }
-  function selectExercise(id: CvExerciseId) {
-    camera.stop();
-    lastFrameAt.current = -Infinity;
-    setExercise(id);
-    resetCalibration();
-    setMeasurement(empty);
-    filter.current = createAngleFilter();
-    setFeedback(null);
-    setCaption(
-      "Gemini will identify your comfortable starting and end positions automatically.",
-    );
-    setNotice(
-      id === "static-quads"
-        ? "Guided static quads uses your confirmation. Camera tracking is not required."
-        : "Enable the camera, hold your resting position, then follow the on-screen cue to move to a comfortable end position.",
-    );
-  }
-  function selectSide(value: "left" | "right") {
-    camera.stop();
-    lastFrameAt.current = -Infinity;
-    setSide(value);
-    resetCalibration();
-    setMeasurement(empty);
-    filter.current = createAngleFilter();
-    setNotice(
-      `Working leg changed to ${value}. Enable the camera and hold your resting position for Gemini.`,
-    );
-  }
-  function selectPoseModel(value: PoseModelId) {
-    camera.stop();
-    lastFrameAt.current = -Infinity;
-    setPoseModel(value);
-    resetCalibration();
-    setMeasurement(empty);
-    filter.current = createAngleFilter();
-    setFeedback(null);
-    setError("");
-    setNotice(
-      `${poseModelFor(value).label} model selected. Enable the camera and Gemini will find both comfortable positions.`,
-    );
-  }
-
   async function begin(simulated = false): Promise<Run | null> {
-    if (!context || run.current || recovery || !canStart)
-      return null;
-    if (
-      !simulated &&
-      !staticQuads &&
-      (context.gemini.mode !== "controlled" || !context.gemini.configured)
-    ) {
-      setError(
-        "Gemini movement analysis is unavailable. You can still use the patient-confirmed demonstration.",
-      );
+    if (planDriven && !assignedExercise) {
+      setError(assignmentMessage);
       return null;
     }
+    if (
+      planDriven &&
+      assignedExercise &&
+      (exercise !== assignedExercise.exerciseId || side !== assignedExercise.side)
+    ) {
+      setError("This session must match the exercise in your approved plan.");
+      return null;
+    }
+    if (!context || run.current || recovery || !canStart)
+      return null;
     if (
       !simulated &&
       !staticQuads &&
@@ -960,9 +625,6 @@ export default function GuidedWorkspace({
       );
       return null;
     }
-    calibrationGeneration.current++;
-    calibrationAutoBusy.current = false;
-    setCalibrationBusy(null);
     setStartRequested(false);
     setBusy(true);
     setError("");
@@ -1005,14 +667,7 @@ export default function GuidedWorkspace({
       );
       const r: Run = {
         simulated,
-        poseFrames: [],
-        lastPoseFrameAt: -Infinity,
-        analysisBatchSequence: 0,
-        analysisAt: start,
-        analysisPromise: null,
-        analysisMissing: false,
-        analysisRetryAt: 0,
-        analysisFailures: 0,
+        measurementIncomplete: false,
         transport,
         config,
         engine: createExerciseState(),
@@ -1036,7 +691,6 @@ export default function GuidedWorkspace({
       };
       run.current = r;
       setSession(value);
-      setSetupOpen(false);
       if (value.careReference)
         callbacks.current.onEvent?.({
           version: "1.0.0",
@@ -1044,7 +698,6 @@ export default function GuidedWorkspace({
           sessionId: value.id,
         });
       setEngine(r.engine);
-      setRepAnalysis(null);
       setPaused(false);
       setFeedback(null);
       setLastReport(null);
@@ -1097,9 +750,7 @@ export default function GuidedWorkspace({
         traceTimer.current = null;
       }
       camera.stop();
-      if (!r.simulated && r.transport.session.evidence === "camera_estimated")
-        await analyzePendingPose(r, true);
-      if (r.simulated || r.transport.session.exerciseId === "static-quads") {
+      {
         const invalid = invalidateExercise(
           r.engine,
           "user_pause",
@@ -1120,7 +771,7 @@ export default function GuidedWorkspace({
         completionStatus: status,
         terminationReason: reason,
         timing: summary,
-        timingQuality: r.analysisMissing ? "partial" : "complete",
+        timingQuality: r.measurementIncomplete ? "partial" : "complete",
       };
       camera.stop();
       setGuided(false);
@@ -1162,7 +813,6 @@ export default function GuidedWorkspace({
     callbacks.current.onCoachingPause?.();
     const now = performance.now();
     if (!r.paused) {
-      r.poseFrames = [];
       const invalid = invalidateExercise(r.engine, "user_pause", now - r.start);
       r.engine = invalid.state;
       setEngine(invalid.state);
@@ -1315,15 +965,22 @@ export default function GuidedWorkspace({
     calibration.start !== null &&
     calibration.target !== null &&
     !!deriveCalibration(calibration.start, calibration.target);
+  const manualCaptureReady =
+    camera.status === "tracking" &&
+    measurement.valid &&
+    measurement.angle !== null &&
+    !liveFrameIsStale(lastFrameAt.current, performance.now()) &&
+    evaluateCalibration(samples.current, { maximumSampleGapMs: LIVE_DETECTOR.maximumSampleGapMs }).ready;
   const running = !!session;
   const canCaptureReference = measurement.valid && !liveFrameIsStale(lastFrameAt.current, performance.now()) && evaluateCalibration(samples.current, {maximumSampleGapMs:LIVE_DETECTOR.maximumSampleGapMs}).ready;
   const runtimeStage: ExerciseRuntime["stage"] = lastReport ? "saved" : running ? paused ? "paused" : "running" : staticQuads ? "ready" : camera.status !== "tracking" ? "camera_off" : !measurement.valid ? "framing" : calibration.start === null ? "rest" : calibration.target === null ? "target" : calibrated ? "ready" : "target";
-  const runtimeReps = repAnalysis?.completedReps ?? engine.qualifyingReps;
+  const runtimeReps = engine.qualifyingReps;
   useEffect(() => {
     if (configuration) callbacks.current.onRuntime?.({ exerciseId: exercise, label: configuration.label, side, stage: runtimeStage, missingJoint: measurement.missingJoint, completedReps: runtimeReps, targetReps: configuration.targetReps });
   }, [exercise, configuration?.label, side, runtimeStage, measurement.missingJoint, runtimeReps, configuration?.targetReps]);
   async function requestStart() {
     if (!canStart || busy || recovery) return;
+    if (planDriven && !assignedExercise) { setError(assignmentMessage); return; }
     if (staticQuads || calibrated && camera.status === "tracking" && measurement.valid) { await begin(); return; }
     setStartRequested(true);
     setError("");
@@ -1331,7 +988,6 @@ export default function GuidedWorkspace({
       // A new camera run needs fresh references; never reuse a finished set's pose.
       resetCalibration();
       setLastReport(null);
-      setRepAnalysis(null);
       await camera.start();
     }
   }
@@ -1350,30 +1006,29 @@ export default function GuidedWorkspace({
 
   useEffect(() => {
     const active = run.current;
-    const reps = session?.evidence === "camera_estimated" ? repAnalysis?.completedReps ?? 0 : engine.qualifyingReps;
+    const reps = engine.qualifyingReps;
     if (active && !active.terminal && !active.finishing && !active.paused && reps >= active.transport.session.configuration.targetReps) void finishAction.current();
-  }, [session?.id, repAnalysis?.completedReps, engine.qualifyingReps]);
+  }, [session?.id, engine.qualifyingReps]);
+  const shortHolds = engine.shortHolds;
   const holdDisplay =
     staticQuads && run.current?.guidedAt != null
       ? performance.now() - run.current.guidedAt
       : engine.currentHoldMs;
   const liveConfig = run.current?.config;
-  const liveAnalysis =
-    session?.evidence === "camera_estimated" ? repAnalysis : null;
-  const displayedReps = liveAnalysis?.completedReps ?? engine.qualifyingReps,
-    displayedMovements = liveAnalysis?.movementCycles ?? engine.movementCycles,
-    displayedPhase = liveAnalysis?.phase ?? engine.phase,
-    displayedHold = liveAnalysis?.currentHoldMs ?? holdDisplay;
+  const displayedReps = engine.qualifyingReps,
+    displayedMovements = engine.movementCycles,
+    displayedPhase = engine.phase,
+    displayedHold = holdDisplay;
   const calibrationInstruction =
     camera.status !== "tracking"
-      ? "Enable the camera to begin automatic calibration."
-      : context?.gemini.mode !== "controlled" || !context.gemini.configured
-        ? "Automatic calibration is unavailable. You can capture references manually."
-        : calibration.start === null
-          ? "Hold your comfortable resting position while Gemini checks a few frames."
-          : calibration.target === null
-            ? "Now move to your comfortable end position and hold it while Gemini checks."
-            : "Your references are ready. Start when you feel comfortable.";
+      ? "Turn on the camera to capture your reference positions."
+      : calibration.start === null
+        ? "Hold your comfortable resting position, then capture Resting position below."
+        : calibration.target === null
+          ? "Move to your comfortable end position, then capture Comfortable target below."
+          : calibrated
+            ? "Your references are ready. Start when you feel comfortable."
+            : "Re-capture one position so the two references are at least 15° apart.";
   const rangeText = (range: [number, number]) =>
     `${range[0].toFixed(0)}–${range[1].toFixed(0)}°`;
   const measurementHelp =
@@ -1385,10 +1040,10 @@ export default function GuidedWorkspace({
         : measurement.reason === "torso_unavailable"
           ? "This leg raise also needs your working-side shoulder visible for its torso reference."
           : measurement.missingJoint
-            ? `I can’t see your ${side} ${measurement.missingJoint} clearly. Move back so your whole working leg is in view, or choose the leg nearest the camera.`
-            : `Keep your selected ${side} hip, knee and ankle visible. Choose the leg nearest the camera.`;
+            ? `I can’t see your ${side} ${measurement.missingJoint} clearly. Move back so your whole working leg is in view, with that leg nearest the camera.`
+            : `Keep your assigned ${side} hip, knee and ankle visible. Place that leg nearest the camera.`;
   const countingInstruction = !running
-    ? "Capture your references, then start the set to count movements."
+    ? "Follow the on-screen guidance, then start your exercise."
     : paused
       ? "Counting is paused."
       : !trace && !measurement.valid
@@ -1403,8 +1058,7 @@ export default function GuidedWorkspace({
               returning: `Return to your start reference (${rangeText(liveConfig.startRangeDeg)}) to finish this movement.`,
               return_hold: `Hold the bent position: ${seconds(displayedHold)} / ${seconds(liveConfig.flexionHoldMs ?? 0)} seconds.`,
             }[engine.phase];
-  if (presentation === "camera") {
-    const exerciseHint = staticQuads
+  const exerciseHint = staticQuads
       ? "Gently tighten the thigh muscle, then confirm your hold."
       : exercise === "straight-leg-raise"
         ? "Lift your leg at your own pace."
@@ -1430,6 +1084,21 @@ export default function GuidedWorkspace({
       feedback &&
       (!feedback.expiresAtUtc ||
         Date.parse(feedback.expiresAtUtc) > Date.now());
+    const bridgeCueVisible =
+      running &&
+      Boolean(pandaMessage) &&
+      Boolean(pandaCue) &&
+      !pandaCueExpired &&
+      pandaCue?.text !== pandaMessage;
+  const feedbackScope = exercise + ":" + side + ":" + (session?.id ?? "setup") + ":" + (pauseRequested || paused ? "paused" : lastReport ? "saved" : "active");
+  const heading = pandaMessage || (planDriven && !assignedExercise ? "Waiting for your assigned exercise." : lastReport ? "How did that feel?" : running ? movementText : staticQuads ? "Make yourself comfortable." : camera.status === "tracking" ? !measurement.valid ? "Let’s get your working leg in view." : calibration.start === null ? "Hold your comfortable starting position." : calibration.target === null ? "Now find your comfortable target." : "Your references are ready." : "Let’s get you in view.");
+  const detail = pandaMessage ? "" : running ? paused ? "Counting is paused. Take your time." : (cueVisible ? feedback.text : staticQuads ? exerciseHint : "Follow your comfortable references. Stop if it feels uncomfortable.") : lastReport ? "Panda will help you review how you felt." : staticQuads ? "This guided timer uses your confirmation. No camera measurement is claimed." : camera.status === "tracking" ? !measurement.valid ? measurementHelp : calibrationInstruction : trackingProfile.framingInstruction;
+  const cameraGuide = useMinimumDisplay({ heading, detail, fromPanda: Boolean(pandaMessage) }, feedbackScope);
+  const stableCountingInstruction = useMinimumDisplay(countingInstruction, feedbackScope);
+  const stableCaption = useMinimumDisplay(caption, feedbackScope);
+  const stableBridgeCue = useMinimumDisplay(bridgeCueVisible ? pandaCue?.text ?? "" : "", feedbackScope);
+  const cameraStatusText = useMinimumDisplay(trace ? "Simulated movements" : staticQuads ? "Patient-confirmed holds" : camera.status === "tracking" ? measurement.valid ? `Tracking your ${side} leg` : `Bring your ${side} leg into view` : "Camera off", feedbackScope);
+  if (presentation === "camera") {
     async function exit() {
       if (run.current) await finish("interrupted", "patient_stopped");
       if (!run.current) onExit?.();
@@ -1461,18 +1130,12 @@ export default function GuidedWorkspace({
           </button>
           <div>
             <small>Move with Panda</small>
-            <strong>{configuration?.label ?? "Your exercise"}</strong>
-            <span>
-              {trace
-                ? "Simulated movements"
-                : staticQuads
-                  ? "Patient-confirmed holds"
-                  : camera.status === "tracking"
-                    ? measurement.valid
-                      ? `Tracking your ${side} leg`
-                      : `Bring your ${side} leg into view`
-                    : "Camera off"}
-            </span>
+            <strong>
+              {planDriven
+                ? assignedExercise?.label ?? "Your exercise"
+                : configuration?.label ?? "Your exercise"}
+            </strong>
+            <span>{cameraStatusText}</span>
           </div>
         </div>
         <aside
@@ -1482,10 +1145,10 @@ export default function GuidedWorkspace({
           {companion}
         </aside>
         <div className={immersive.guide} role="status" aria-live="polite">
-          {pandaMessage ? (
+          {cameraGuide.fromPanda ? (
             <>
               <span className={immersive.eyebrow}>Panda is here with you</span>
-              <h1>{pandaMessage}</h1>
+              <h1>{cameraGuide.heading}</h1>
             </>
           ) : (
             <>
@@ -1498,59 +1161,30 @@ export default function GuidedWorkspace({
                       : "One movement at a time"
                     : "A little movement, together"}
               </span>
-              <h1>
-                {lastReport
-                  ? "How did that feel?"
-                  : running
-                    ? movementText
-                    : staticQuads
-                      ? "Make yourself comfortable."
-                      : camera.status === "tracking"
-                        ? !measurement.valid
-                          ? "Let’s get your working leg in view."
-                          : calibration.start === null
-                          ? "Hold your comfortable starting position."
-                          : calibration.target === null
-                            ? "Now find your comfortable target."
-                            : "Your references are ready."
-                        : "Let’s get you in view."}
-              </h1>
-              {running &&
-                (guided ||
-                  displayedPhase === "holding" ||
-                  displayedPhase === "return_hold") && (
-                  <strong className={immersive.hold}>
-                    {seconds(displayedHold)}
-                    <span>
-                      {" "}
-                      /{" "}
-                      {seconds(
-                        displayedPhase === "return_hold"
-                          ? (configuration?.flexionHoldMs ?? 0)
-                          : (configuration?.targetHoldMs ?? 5000),
-                      )}{" "}
-                      sec
-                    </span>
-                  </strong>
-                )}
-              <p>
-                {running
-                  ? paused ? "Counting is paused. Take your time." : liveAnalysis?.cue ||
-                    (cueVisible
-                      ? feedback.text
-                      : staticQuads
-                        ? exerciseHint
-                        : "Follow your comfortable references. Stop if it feels uncomfortable.")
-                  : lastReport
-                    ? "Panda will help you review how you felt."
-                    : staticQuads
-                      ? "This guided timer uses your confirmation. No camera measurement is claimed."
-                      : camera.status === "tracking"
-                        ? !measurement.valid ? measurementHelp : calibrationInstruction
-                        : trackingProfile.framingInstruction}
-              </p>
+              <h1>{cameraGuide.heading}</h1>
+
+              <p>{cameraGuide.detail}</p>
+
             </>
           )}
+          {running &&
+            (guided ||
+              displayedPhase === "holding" ||
+              displayedPhase === "return_hold") && (
+              <strong className={immersive.hold}>
+                {seconds(displayedHold)}
+                <span>
+                  {" "}
+                  /{" "}
+                  {seconds(
+                    displayedPhase === "return_hold"
+                      ? (configuration?.flexionHoldMs ?? 0)
+                      : (configuration?.targetHoldMs ?? 5000),
+                  )}{" "}
+                  sec
+                </span>
+              </strong>
+            )}
           {!running &&
             !lastReport &&
             !staticQuads &&
@@ -1558,12 +1192,11 @@ export default function GuidedWorkspace({
               <button
                 disabled={
                   busy ||
+                  (planDriven && !assignedExercise) ||
                   camera.status === "loading" ||
                   camera.status === "permission"
                 }
-                onClick={() =>
-                  void camera.start().then(() => setSetupOpen(true))
-                }
+                onClick={() => void camera.start()}
               >
                 {camera.status === "loading"
                   ? "Preparing camera…"
@@ -1572,42 +1205,40 @@ export default function GuidedWorkspace({
                     : "Enable camera"}
               </button>
             )}
-          {error || camera.error ? (
-            <p className={immersive.error} role="alert">
-              {error || camera.error}
-            </p>
-          ) : null}
+
         </div>
+        {stableBridgeCue && (
+          <aside
+            className={immersive.feedbackOverlay}
+            role="status"
+            aria-live="polite"
+            aria-label="Live movement feedback from Panda"
+          >
+            <span>Live movement cue</span>
+            <p>{stableBridgeCue}</p>
+          </aside>
+        )}
         <div className={immersive.bottom}>
           {running && (
             <div className={immersive.progress}>
               <span>
-                Set {reports.filter(report => report.exerciseId === exercise && report.side === side && report.startedAtUtc.slice(0,10) === new Date().toISOString().slice(0,10)).length + 1} · {displayedReps} of {configuration?.targetReps ?? 10} reps
+                Set {reports.filter(report => report.exerciseId === exercise && report.side === side && report.startedAtUtc.slice(0,10) === new Date().toISOString().slice(0,10)).length + 1} · {displayedReps} of {configuration?.targetReps ?? 10} reps · {displayedMovements} movements · {shortHolds} short holds
               </span>
               <span>{clock(timing.elapsedTimeMs)}</span>
             </div>
           )}
-          {!running && !staticQuads && camera.status === "tracking" && !calibrated && (
-            <div className={immersive.referenceSteps} aria-label="Save comfortable positions">
-              <span>{calibration.start === null ? "1 · Starting position" : "2 · Comfortable end position"}{calibrationConsensus ? ` · checking ${calibrationConsensus.count}/3` : ""}</span>
-              <button disabled={!canCaptureReference || busy} onClick={() => capture(calibration.start === null ? "start" : "target")}>{calibration.start === null ? "Save starting position" : "Save comfortable target"}</button>
-              {!measurement.valid && <button onClick={() => selectSide(side === "left" ? "right" : "left")}>Track {side === "left" ? "right" : "left"} leg instead</button>}
-              <small>Hold still for a second. Automatic setup also runs while you wait.</small>
+          {!running && !lastReport && !staticQuads && camera.status === "tracking" && (
+            <div className={immersive.referenceSteps} aria-label="Manual calibration">
+              <span>{calibration.start === null ? "1 · Starting position" : calibration.target === null ? "2 · Comfortable end position" : "Reference positions saved"}</span>
+              <button disabled={!canCaptureReference || busy} onClick={() => capture("start")}>Save starting position{calibration.start !== null ? ` · ${calibration.start}°` : ""}</button>
+              <button disabled={!canCaptureReference || busy || calibration.start === null} onClick={() => capture("target")}>Save comfortable target{calibration.target !== null ? ` · ${calibration.target}°` : ""}</button>
+              <small>{!measurement.valid ? measurementHelp : canCaptureReference ? `Current estimate: ${measurement.angle?.toFixed(0)}°. Save each comfortable position.` : "Hold still for one second before saving each position."}</small>
             </div>
           )}
           {lastReport && <div className={immersive.progress}><span>{lastReport.completedReps} reps saved</span><span>{reports.filter(report => report.exerciseId === exercise && report.side === side && report.startedAtUtc.slice(0,10) === new Date().toISOString().slice(0,10)).length} sets saved today</span></div>}
           {conversation}
           {!canStart && context && <p className={immersive.reviewHint}>{lastReport ? "Tell Panda how the set felt before starting another." : "Continue the check-in with Panda before starting a set."}</p>}
           <div className={immersive.buttons}>
-            <button
-              type="button"
-              className={immersive.quiet}
-              onClick={() => setSetupOpen((value) => !value)}
-              aria-expanded={setupOpen}
-              aria-label="Set up exercise"
-            >
-              ☷ <span>Set up</span>
-            </button>
             {running ? (
               <>
                 <button
@@ -1622,7 +1253,7 @@ export default function GuidedWorkspace({
               </>
             ) : (
               <button
-                disabled={!context || !canStart || busy || !!recovery}
+                disabled={!context || (planDriven && !assignedExercise) || !canStart || busy || !!recovery}
                 onClick={() => void requestStart()}
               >
                 {busy ? "Starting…" : !canStart && context ? "Continue with Panda" : staticQuads || calibrated ? "Start set" : camera.status === "loading" || camera.status === "permission" ? "Starting camera…" : camera.status !== "tracking" ? "Set up & start" : startRequested ? "Start after setup" : "Set up this set"}
@@ -1661,157 +1292,6 @@ export default function GuidedWorkspace({
             Images stay on this device. Joint positions are sent to Gemini.
           </small>
         )}
-        {setupOpen && (
-          <section className={immersive.setup} aria-label="Exercise setup">
-            <div className={immersive.setupHeading}>
-              <h2>Your comfortable setup</h2>
-              <button
-                type="button"
-                aria-label="Close exercise setup"
-                onClick={() => setSetupOpen(false)}
-              >
-                ×
-              </button>
-            </div>
-            <div className={immersive.fields}>
-              <label>
-                Exercise
-                <select
-                  aria-label="Exercise"
-                  value={exercise}
-                  disabled={running || busy}
-                  onChange={(e) =>
-                    selectExercise(e.target.value as CvExerciseId)
-                  }
-                >
-                  {context?.exercises.map((item) => (
-                    <option key={item.exerciseId} value={item.exerciseId}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Working leg
-                <select
-                  value={side}
-                  disabled={running || busy}
-                  onChange={(e) =>
-                    selectSide(e.target.value as "left" | "right")
-                  }
-                >
-                  <option value="left">Left</option>
-                  <option value="right">Right</option>
-                </select>
-              </label>
-            </div>
-            <div className={immersive.fields}>
-              <label>
-                Pose model
-                <select
-                  aria-label="Pose model"
-                  value={poseModel}
-                  disabled={
-                    staticQuads || running || busy || calibrationBusy !== null
-                  }
-                  onChange={(e) =>
-                    selectPoseModel(e.target.value as PoseModelId)
-                  }
-                >
-                  {POSE_MODELS.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.label}
-                    </option>
-                  ))}
-                </select>
-                <small>{poseModelFor(poseModel).description}</small>
-              </label>
-            </div>
-            <p>{configuration?.description}</p>
-            {!staticQuads && (
-              <p aria-live="polite">
-                {calibrationInstruction}
-                {calibrationConsensus
-                  ? ` (${calibrationConsensus.count}/3 checks)`
-                  : ""}
-              </p>
-            )}
-            {!staticQuads && (
-              <>
-                <details>
-                  <summary>Manual reference override</summary>
-                  <div className={immersive.calibration}>
-                    <button
-                      disabled={running || camera.status !== "tracking"}
-                      onClick={() => capture("start")}
-                    >
-                      1. Start position{" "}
-                      <small>
-                        {calibration.start === null
-                          ? "Hold still, then capture"
-                          : calibration.start +
-                            "° · " +
-                            calibrationSource.start}
-                      </small>
-                    </button>
-                    <button
-                      disabled={running || camera.status !== "tracking"}
-                      onClick={() => capture("target")}
-                    >
-                      2. Comfortable target{" "}
-                      <small>
-                        {calibration.target === null
-                          ? "Hold still, then capture"
-                          : calibration.target + "° captured"}
-                      </small>
-                    </button>
-                  </div>
-                </details>
-                <button
-                  disabled={
-                    running ||
-                    camera.status === "loading" ||
-                    camera.status === "permission"
-                  }
-                  onClick={() => void camera.start()}
-                >
-                  Enable camera
-                </button>
-                <button
-                  className={immersive.setupSecondary}
-                  disabled={running}
-                  onClick={() => camera.stop()}
-                >
-                  Stop camera
-                </button>
-              </>
-            )}
-            {recovery && (
-              <button disabled={busy} onClick={() => void recover()}>
-                Save recovered set
-              </button>
-            )}
-            <small>Demonstration references only. Stop if uncomfortable.</small>
-            <details>
-              <summary>Test without a camera</summary>
-              <p>This example produces simulated evidence.</p>
-              <button
-                disabled={
-                  !context || running || busy || !!recovery || staticQuads
-                }
-                onClick={() => void replay()}
-              >
-                Run sample movements
-              </button>
-            </details>
-            <button
-              className={immersive.setupDone}
-              onClick={() => setSetupOpen(false)}
-            >
-              Done
-            </button>
-          </section>
-        )}
       </div>
     );
   }
@@ -1842,10 +1322,10 @@ export default function GuidedWorkspace({
         </button>
       )}
       <p
-        className={`${styles.status} ${error ? styles.error : ""}`}
+        className={styles.status}
         role="status"
       >
-        {error || notice}
+        {noticeIsFailure ? "" : notice}
       </p>
       {recovery && (
         <div className={styles.status}>
@@ -1944,6 +1424,7 @@ export default function GuidedWorkspace({
                   !context ||
                   running ||
                   busy ||
+                  (planDriven && !assignedExercise) ||
                   camera.status === "permission" ||
                   camera.status === "loading"
                 }
@@ -1968,17 +1449,13 @@ export default function GuidedWorkspace({
               </button>
               <small>{trackingProfile.framingInstruction}</small>
             </div>
-            {camera.error && (
-              <p className={`${styles.status} ${styles.error}`}>
-                {camera.error}
-              </p>
-            )}
+
             {!staticQuads && (
               <div
                 className={styles.countingGuide}
                 aria-label="Repetition counting guidance"
               >
-                <strong>{countingInstruction}</strong>
+                <strong>{stableCountingInstruction}</strong>
                 <p>
                   {running && liveConfig
                     ? `Start ${rangeText(liveConfig.startRangeDeg)} · Target ${rangeText(liveConfig.targetRangeDeg)} · ${side} leg`
@@ -1990,6 +1467,7 @@ export default function GuidedWorkspace({
               </div>
             )}
             <div className={styles.metrics}>
+              <div className={styles.metric}><strong>{shortHolds}</strong><span>Short holds</span></div>
               <div className={styles.metric}>
                 <strong>{displayedMovements}</strong>
                 <span>Full movements</span>
@@ -2021,7 +1499,7 @@ export default function GuidedWorkspace({
                     : "Immediate text"}
               </span>
             </div>
-            <blockquote aria-live="polite">{caption}</blockquote>
+            <blockquote aria-live="polite">{stableCaption}</blockquote>
             <p>
               {paused
                 ? "Paused"
@@ -2039,69 +1517,26 @@ export default function GuidedWorkspace({
           <section className={styles.panel}>
             <div className={styles.panelHead}>
               <div>
-                <h2>Set up your demonstration</h2>
-                <p>Comfortable references, never a prescription.</p>
+                <h2>Your assigned exercise</h2>
+                <p>Follow the exercise and side from your care plan.</p>
               </div>
             </div>
             <div className={styles.setup}>
               <div className={styles.fieldRow}>
                 <label>
                   Exercise
-                  <select
-                    aria-label="Exercise"
-                    value={exercise}
-                    disabled={running || busy}
-                    onChange={(e) =>
-                      selectExercise(e.target.value as CvExerciseId)
-                    }
-                  >
-                    {context?.exercises.map((item) => (
-                      <option key={item.exerciseId} value={item.exerciseId}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
+                  <span>{assignedExercise?.label ?? configuration?.label ?? "Loading exercise…"}</span>
                 </label>
                 <label>
                   Working leg
-                  <select
-                    value={side}
-                    disabled={running || busy}
-                    onChange={(e) =>
-                      selectSide(e.target.value as "left" | "right")
-                    }
-                  >
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                  </select>
+                  <span>
+                    {(assignedExercise?.side ?? side) === "left" ? "Left" : "Right"}
+                  </span>
                 </label>
               </div>
-              <div className={styles.fieldRow}>
-                <label>
-                  Pose model
-                  <select
-                    aria-label="Pose model"
-                    value={poseModel}
-                    disabled={
-                      staticQuads || running || busy || calibrationBusy !== null
-                    }
-                    onChange={(e) =>
-                      selectPoseModel(e.target.value as PoseModelId)
-                    }
-                  >
-                    {POSE_MODELS.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+
               <p className={styles.footnote}>
                 {calibrationInstruction}
-                {calibrationConsensus
-                  ? ` (${calibrationConsensus.count}/3 checks)`
-                  : ""}
               </p>
               <div className={styles.configNote}>
                 {configuration?.description ?? "Loading exercise references…"}
@@ -2113,39 +1548,29 @@ export default function GuidedWorkspace({
               {!staticQuads && (
                 <div>
                   <div className={styles.stepLabel}>
-                    Automatic Gemini calibration · manual override
+                    Manual calibration
                   </div>
-                  <div className={styles.calibration}>
-                    <button
-                      className={
-                        calibration.start !== null ? styles.captured : ""
-                      }
-                      disabled={running || camera.status !== "tracking"}
-                      onClick={() => capture("start")}
-                    >
-                      <span>1. Start position</span>
-                      <strong>
-                        {calibration.start === null
-                          ? "—"
-                          : `${calibration.start}°`}
-                      </strong>
-                      <small>Hold still for one second</small>
-                    </button>
-                    <button
-                      className={
-                        calibration.target !== null ? styles.captured : ""
-                      }
-                      disabled={running || camera.status !== "tracking"}
-                      onClick={() => capture("target")}
-                    >
-                      <span>2. Comfortable target</span>
-                      <strong>
-                        {calibration.target === null
-                          ? "—"
-                          : `${calibration.target}°`}
-                      </strong>
-                      <small>Capture, review, then start</small>
-                    </button>
+                  <div>
+                    <div className={styles.calibration}>
+                      <button
+                        className={calibration.start !== null ? styles.captured : ""}
+                        disabled={running || !manualCaptureReady}
+                        onClick={() => capture("start")}
+                      >
+                        <span>Resting position</span>
+                        <strong>{calibration.start === null ? "—" : `${calibration.start}°`}</strong>
+                        <small>Current estimate: {manualCaptureReady ? `${measurement.angle!.toFixed(0)}°` : "waiting for tracking"}</small>
+                      </button>
+                      <button
+                        className={calibration.target !== null ? styles.captured : ""}
+                        disabled={running || !manualCaptureReady}
+                        onClick={() => capture("target")}
+                      >
+                        <span>Comfortable target</span>
+                        <strong>{calibration.target === null ? "—" : `${calibration.target}°`}</strong>
+                        <small>Capture while holding comfortably</small>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2154,13 +1579,14 @@ export default function GuidedWorkspace({
                   className={styles.runButton}
                   disabled={
                     !context ||
+                    (planDriven && !assignedExercise) ||
                     busy ||
                     !!recovery ||
                     (!staticQuads && !calibrated)
                   }
                   onClick={() => void begin()}
                 >
-                  {busy ? "Starting…" : "Start set"}
+                  {busy ? "Starting…" : "Start exercise"}
                 </button>
               ) : (
                 <>
@@ -2221,7 +1647,7 @@ export default function GuidedWorkspace({
               )}
               <p className={styles.footnote}>
                 {context?.gemini.configured
-                  ? `Gemini ready · ${context.gemini.model}`
+                  ? "Automatic Gemini feedback is configured."
                   : "Gemini is off or unconfigured. Deterministic text remains available."}
               </p>
             </div>
@@ -2230,10 +1656,7 @@ export default function GuidedWorkspace({
             <h3>A comfortable setup</h3>
             <ol>
               <li>{trackingProfile.framingInstruction}</li>
-              <li>
-                Capture two comfortable references. Change position if tracking
-                is unclear.
-              </li>
+              <li>Capture your resting position and comfortable target using the two buttons before starting. Keep each position steady while capturing.</li>
               <li>
                 Move, hold and return. A movement and a target-complete
                 repetition are shown separately.

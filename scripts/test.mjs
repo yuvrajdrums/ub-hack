@@ -9,6 +9,7 @@ const env = {
 };
 for (const name of [
   "PANDA_GEMINI_API_KEY",
+  "REHAB_GEMINI_API_KEY",
   "PANDA_OPENAI_API_KEY",
   "PANDA_ELEVENLABS_API_KEY",
   "PANDA_DATABASE_URL",

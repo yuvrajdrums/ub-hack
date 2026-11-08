@@ -17,7 +17,7 @@ export type CameraFrame = {
   inferenceMs: number;
 };
 type CameraStatus = "off" | "permission" | "loading" | "tracking" | "error";
-// Panda's runtime adaptation: show only the joints actually used to track this exercise.
+// Draw every confidently visible body landmark, independently of exercise measurement joints.
 const visiblePoint = (p: CameraLandmark | undefined, profile: TrackingProfile) => !!p &&
   Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1 &&
   (p.visibility ?? 0) >= profile.minimumVisibility && (p.presence ?? 1) >= profile.minimumPresence;
@@ -122,12 +122,11 @@ export function usePoseCamera(profile:TrackingProfile,onFrame: (frame: CameraFra
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             for (const points of result.landmarks) {
               ctx.strokeStyle = "#b9efce"; ctx.lineWidth = 4;
-              for (const [a,b] of profile.connections) {
+              for (const { start: a, end: b } of Landmarker.POSE_CONNECTIONS) {
                 if (!visiblePoint(points[a], profile) || !visiblePoint(points[b], profile)) continue;
                 ctx.beginPath();ctx.moveTo(points[a].x * canvas.width, points[a].y * canvas.height);ctx.lineTo(points[b].x * canvas.width, points[b].y * canvas.height);ctx.stroke();
               }
-              for (const index of profile.requiredJoints) {
-                const p = points[index];
+              for (const p of points) {
                 if (!visiblePoint(p, profile)) continue;
                 ctx.fillStyle = "#fff";ctx.beginPath();ctx.arc(p.x*canvas.width,p.y*canvas.height,6,0,Math.PI*2);ctx.fill();
               }

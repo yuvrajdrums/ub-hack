@@ -2,6 +2,7 @@ import { routineExerciseTurn } from "../../../../packages/contracts/exercise-run
 import { getGuidedSession,getGuidedFeedback,getGuidedAnalysis,GuidedAnalysisSchema,getGuidedCalibration,GuidedCalibrationSchema } from "../../../../packages/platform/guided-rehab";
 import { CvSessionSchema,CvFeedbackSchema,type CvSession,type CvFeedbackText } from "../../../../packages/contracts/rehab-cv";
 import { requestsExercise } from "../../../../packages/contracts/exercise-navigation";
+import { resolvePlanExercise } from "../../../../packages/rehab-bridge/plan-assignment";
 import { randomUUID } from "node:crypto";
 import { StartCheckinSchema, OpenExerciseSchema, AnswerCheckinSchema, ContinueCheckinSchema, ExerciseFeedbackSchema,
   type CheckinSession, type PatientMemoryEvent, type MemoryKind } from "../../../../packages/contracts/checkin";
@@ -77,7 +78,12 @@ export function checkinService(
     if(s.stage==="food")return reply(s,s.foodKnown?"Have you had anything else to eat since your last check-in?":"What have you had to eat today?");
     if(s.stage==="followup")return reply(s,"When would you like your next care-team check-in? I can note a preference, but booking is still pending.");
     if(s.stage==="readiness")return reply(s,"How are you feeling about doing a little exercise?");
-    if(s.stage==="exercise")return reply(s,"Let's open the guided exercise demo. I'll stay here with you.",{navigation:"/rehab"});
+    if(s.stage==="exercise"){
+      const assignment=resolvePlanExercise(care.plan);
+      return assignment.assignment
+        ? reply(s,"Let's open the exercise in your approved plan. I'll stay here with you.",{navigation:"/rehab"})
+        : reply(s,assignment.message);
+    }
     if(s.stage==="exercise_review")return reply(s,"How did that exercise feel?");
     if(s.stage==="pain_check")return reply(s,"Did you notice any pain or discomfort?");
     return reply(s,"We've covered the check-in. What's on your mind?");
@@ -156,6 +162,16 @@ export function checkinService(
     event(tx,s,"guided-report:"+captured.id,"exercise_report",report.configuration.label+": "+report.movementCycles+" movements, "+report.completedReps+" met demonstration targets; "+report.shortHolds+" short holds; evidence "+report.evidence+"; tracking "+report.trackingQuality+"; ended "+report.terminationReason+".","rehab_report",{sessionId:captured.id,sourceRoute:"/rehab/api/cv/v1/sessions/"+captured.id,evidence:report.evidence,configurationMode:report.configurationMode,report});
     return report;
   }
+  function guidedReportSummary(report:NonNullable<CvSession["report"]>) {
+    const status=report.completionStatus==="completed"?"Set complete":"Set saved as incomplete";
+    const evidence=report.evidence==="camera_estimated"?"Camera estimate":"Evidence: "+report.evidence.replaceAll("_"," ");
+    const tracking=report.trackingQuality.replaceAll("_"," ");
+    const range=report.rangeDegrees===null?"Range estimate unavailable.":"Estimated range "+Math.round(report.rangeDegrees)+" degrees.";
+    const stop=report.terminationReason==="discomfort_reported"
+      ? "We stopped for discomfort. Keep the exercise paused and tell me what felt uncomfortable. "
+      : report.completionStatus==="completed"?"":"The set ended early. ";
+    return `${stop}${report.configuration.label}. ${status}: ${report.completedReps} of ${report.targetReps} demonstration targets met across ${report.movementCycles} movement cycles; ${report.shortHolds} short holds. ${evidence}; tracking ${tracking}. ${range} Demonstration targets are examples, not a prescription or clinical validation. How did that feel?`;
+  }
   function currentSession(tx:MemoryTransaction,care:CareSnapshot,requestId:string){
         let s=tx.latestSession();
         const changed=s && (s.planId !== care.plan!.id || s.planVersion !== care.plan!.version);
@@ -172,8 +188,10 @@ export function checkinService(
     return s;
   }
   function enterExercise(tx:MemoryTransaction,s:CheckinSession,care:CareSnapshot,requestId:string,text?:string):VoiceReply {
-    if(s.pendingProposalId)return {...question(s,care),navigation:"/rehab",message:"Before starting a set, let's resolve the action we were confirming."};
+    if(s.pendingProposalId)return {...question(s,care),message:"Before starting a set, let's resolve the action we were confirming."};
     if(s.concernPending)return reply(s,"Let's keep exercise on hold while we talk through your concern.",{pauseExercise:true});
+    const assignment=resolvePlanExercise(care.plan);
+    if(!assignment.assignment)return reply(s,assignment.message);
     if(["exercise_review","pain_check"].includes(s.stage))return {...question(s,care),navigation:"/rehab"};
     if(s.stage!=="exercise"){
       if(s.exerciseReviewed){s.exerciseSessionId=undefined;s.exerciseFeature=undefined;s.exerciseLabel=undefined;}
@@ -374,7 +392,7 @@ export function checkinService(
           s.exerciseSessionId=guided.id;s.exerciseFeature="guided";s.exerciseLabel=guided.configuration.label;save(tx,s);
           if(v.event.type==="guided_report_saved"){
             const report=rememberGuided(tx,s,guided);if(report.terminationReason==="discomfort_reported")s.concernPending=true;s.stage="exercise_review";save(tx,s);
-            return reply(s,(report.evidence==="simulated"?"That was a simulated set. ":"")+(report.terminationReason==="discomfort_reported"?"Let's leave exercise there. What did you feel?":"Your set is saved. How did that exercise feel?"));
+            return reply(s,guidedReportSummary(report));
           }
           if(analysisResult&&v.event.type==="guided_analysis"){
             if(analysisResult.batchSequence!==v.event.batchSequence||analysisResult.session.id!==guided.id||analysisResult.sessionControlRevision!==guided.sessionControlRevision||guided.status!=="running"||now()-Date.parse(analysisResult.acceptedAt)>10000)return question(s,current);

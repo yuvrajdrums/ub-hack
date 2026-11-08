@@ -7,7 +7,7 @@ import { fixtureCare } from "../packages/contracts/fixtures";
 async function environment(fn: () => Promise<void>) {
   const previous = { ...process.env }, fetch = globalThis.fetch;
   Object.assign(process.env, {
-    PANDA_AI_MODE: "gemini", PANDA_GEMINI_API_KEY: "fake-secret", PANDA_GEMINI_MODEL: "test-model",
+    PANDA_AI_MODE: "gemini", PANDA_GEMINI_API_KEY: "fake-secret", REHAB_GEMINI_API_KEY: "separate-rehab-secret",
     PANDA_OPENAI_API_KEY: "fake-secret", PANDA_OPENAI_MODEL: "test-model",
     PANDA_TTS_MODE: "elevenlabs", PANDA_ELEVENLABS_API_KEY: "fake-secret",
     PANDA_ELEVENLABS_VOICE_ID: "test-voice", PANDA_ELEVENLABS_MODEL_ID: "test-model",
@@ -21,7 +21,7 @@ async function environment(fn: () => Promise<void>) {
 }
 test("Gemini request uses server header, allowlisted schemas and a bounded signal", async () => environment(async () => {
   globalThis.fetch = async (url, options) => {
-    assert.equal(String(url), "https://generativelanguage.googleapis.com/v1beta/models/test-model:generateContent");
+    assert.equal(String(url), "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent");
     assert.ok(!String(url).includes("fake-secret"));
     assert.equal(new Headers(options?.headers).get("x-goog-api-key"), "fake-secret");
     const body = JSON.parse(String(options?.body));
@@ -71,9 +71,12 @@ test("provider configuration, invalid JSON and timeouts never fall back to demo"
   delete process.env.PANDA_GEMINI_API_KEY;
   await assert.rejects(() => classify("test", fixtureCare()), /Set PANDA_GEMINI/);
   process.env.PANDA_GEMINI_API_KEY = "fake-secret";
-  process.env.PANDA_GEMINI_MODEL = "https://untrusted.example";
-  await assert.rejects(() => classify("test", fixtureCare()), /model ID/);
-  process.env.PANDA_GEMINI_MODEL = "test-model";
+  assert.equal(providerStatus().configured, true);
+  globalThis.fetch = async (url) => {
+    assert.equal(String(url), "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent");
+    return Response.json({ candidates: [{ content: { parts: [{ functionCall: { name: "read_plan", args: {} } }] } }] });
+  };
+  assert.equal((await classify("my plan", fixtureCare())).command?.name, "read_plan");
   globalThis.fetch = async () => new Response("invalid-json");
   await assert.rejects(() => classify("test", fixtureCare()), /invalid response/);
   globalThis.fetch = async () => { throw new DOMException("timeout", "TimeoutError"); };

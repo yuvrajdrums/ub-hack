@@ -46,6 +46,7 @@ export interface ExerciseState {
   attemptedCycles: number;
   movementCycles: number;
   qualifyingReps: number;
+  shortHolds: number;
   nextAttempt: number;
   activeAttempt: ActiveAttempt | null;
   currentHoldMs: number;
@@ -64,7 +65,7 @@ export function defaultEngineConfig(exerciseId: ExerciseId): EngineConfig {
     allowedKneeRangeDeg: exerciseId === "straight-leg-raise" ? [155, 180] : undefined, ...DETECTOR_DEFAULTS };
 }
 export function createExerciseState(): ExerciseState {
-  return { phase: "await_start", attemptedCycles: 0, movementCycles: 0, qualifyingReps: 0, nextAttempt: 1,
+  return { phase: "await_start", attemptedCycles: 0, movementCycles: 0, qualifyingReps: 0, shortHolds: 0, nextAttempt: 1,
     activeAttempt: null, currentHoldMs: 0, conditionSinceMs: null, lastAtMs: null, lastAngleDeg: null, trackingAvailable: false };
 }
 const inRange = (value: number, range: [number, number]) => value >= range[0] && value <= range[1];
@@ -94,7 +95,8 @@ function finish(state: ExerciseState, config: EngineConfig, codes: FeedbackCode[
   return { state: { ...state, phase: state.lastAngleDeg !== null && inRange(state.lastAngleDeg, config.startRangeDeg) ? "armed" : "await_start",
     activeAttempt: null, currentHoldMs: 0, conditionSinceMs: null,
     attemptedCycles: state.attemptedCycles + 1, movementCycles: state.movementCycles + Number(attempt.movementComplete),
-    qualifyingReps: state.qualifyingReps + Number(attempt.qualifying) }, attempt, feedbackCodes };
+    qualifyingReps: state.qualifyingReps + Number(attempt.qualifying),
+    shortHolds: state.shortHolds + Number(attempt.targetReached && (attempt.holdMs < config.holdMs || attempt.flexionHoldMs < (config.flexionHoldMs ?? 0))) }, attempt, feedbackCodes };
 }
 export function invalidateExercise(state: ExerciseState, reason: string, atMs: number): ExerciseAdvance {
   if (!Number.isFinite(atMs) || (state.lastAtMs !== null && atMs < state.lastAtMs)) return { state, attempt: null, feedbackCodes: [] };
@@ -223,6 +225,6 @@ export function completeGuidedHold(state: ExerciseState, durationMs: number, con
     holdMs: durationMs, flexionHoldMs: 0, targetReached: true, rangeDegrees: null, kneeBent: false,
     invalidated: false, reason: qualifying ? null : "short_hold" };
   return { state: { ...state, nextAttempt: state.nextAttempt + 1, attemptedCycles: state.attemptedCycles + 1,
-    movementCycles: state.movementCycles + 1, qualifyingReps: state.qualifyingReps + Number(qualifying) }, attempt,
+    movementCycles: state.movementCycles + 1, qualifyingReps: state.qualifyingReps + Number(qualifying), shortHolds: state.shortHolds + Number(!qualifying) }, attempt,
     feedbackCodes: qualifying ? ["REP_COMPLETED"] : ["HOLD_TOO_SHORT"] };
 }

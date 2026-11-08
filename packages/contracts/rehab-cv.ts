@@ -7,6 +7,25 @@ export const CvFeedbackCodeSchema = z.enum(["HOLD_TOO_SHORT", "EXTENSION_INCOMPL
 export type CvExerciseId = z.infer<typeof CvExerciseIdSchema>;
 export type CvEvidence = z.infer<typeof CvEvidenceSchema>;
 export type CvFeedbackCode = z.infer<typeof CvFeedbackCodeSchema>;
+export type CvPlanExerciseAssignment = {
+  exerciseId: CvExerciseId;
+  label: string;
+  side: "left" | "right";
+  sourceRef: string;
+  planId: string;
+  planVersion: number;
+};
+export type CvPlanExerciseResolution = {
+  assignment: CvPlanExerciseAssignment | null;
+  reason:
+    | "assigned"
+    | "no_approved_plan"
+    | "no_supported_exercise"
+    | "multiple_exercises"
+    | "missing_side"
+    | "conflicting_sides";
+  message: string;
+};
 const id = z.string().uuid();
 const duration = z.number().finite().min(0).max(43_200_000);
 const angle = z.number().finite().min(0).max(180);
@@ -32,6 +51,7 @@ export interface CvContext {
   storageScope?:string;
   csrfToken: string;
   exercises: CvExerciseConfig[];
+  planExercise?: CvPlanExerciseResolution;
   gemini: { mode: "off" | "controlled"; configured: boolean; model: string | null };
 }
 export const CvStartSchema = z.object({
@@ -70,7 +90,7 @@ export const CvAttemptSchema = z.object({
   rangeDegrees:angle.nullable(),
   kneeBent:z.boolean().optional(),
   invalidated:z.boolean().optional(),
-  reason:z.enum(["tracking_lost","user_pause","short_hold","incomplete_target","knee_bending","target_overshoot"]).optional(),
+  reason:z.enum(["tracking_lost","user_pause","short_hold","incomplete_target","knee_bending","target_overshoot","movement_too_fast"]).optional(),
 }).strict();
 export const CvEventCandidateSchema = z.discriminatedUnion("type",[
   CvAttemptSchema,
@@ -120,6 +140,7 @@ export interface CvChanges { featureVersion:typeof CV_FEATURE_VERSION; changes:C
 export interface CvReport {
   careReference?:CvCareReference;
   analysisMethod?:"gemini_landmark_analysis";
+  measurementMethod?:"local_pose_engine";
   featureVersion:typeof CV_FEATURE_VERSION;
   sessionId:string;
   exerciseId:CvExerciseId;
@@ -148,6 +169,7 @@ export interface CvReport {
 export interface CvSession {
   careReference?:CvCareReference;
   analysisMethod?:"gemini_landmark_analysis";
+  measurementMethod?:"local_pose_engine";
   featureVersion:typeof CV_FEATURE_VERSION;
   id:string;
   exerciseId:CvExerciseId;
@@ -177,7 +199,7 @@ export const CvCareReferenceSchema=z.object({patientId:z.string().min(1),planId:
 export type CvCareReference=z.infer<typeof CvCareReferenceSchema>;
 export const CvConfigSchema=z.object({exerciseId:CvExerciseIdSchema,label:z.string().min(1),description:z.string(),configVersion:z.number().int().positive(),targetReps:z.number().int().positive(),targetHoldMs:duration,flexionHoldMs:duration,startAngleDeg:angle,targetAngleDeg:angle,configurationMode:z.literal("synthetic_demo"),cameraView:z.literal("side")}).strict();
 export const CvFeedbackSchema=z.object({featureVersion:z.literal(CV_FEATURE_VERSION),eventId:id,sessionId:id,feedbackCode:CvFeedbackCodeSchema,attemptId:id.nullable(),sessionControlRevision:z.number().int().nonnegative(),textRevision:z.number().int().positive(),text:z.string().min(1).max(900),textSource:z.enum(["gemini_selected_approved_variant","deterministic_fallback"]),phraseId:z.string(),templateVersion:z.string(),generatedAtUtc:z.string().datetime(),expiresAtUtc:z.string().datetime().nullable(),evidence:CvEvidenceSchema,configurationMode:z.literal("synthetic_demo"),generationStatus:z.enum(["pending","complete"]),fallbackReason:z.string().nullable()}).strict();
-export const CvReportSchema=z.object({featureVersion:z.literal(CV_FEATURE_VERSION),sessionId:id,exerciseId:CvExerciseIdSchema,side:z.enum(["left","right"]),configuration:CvConfigSchema,evidence:CvEvidenceSchema,configurationMode:z.literal("synthetic_demo"),startedAtUtc:z.string().datetime(),observedEndedAtUtc:z.string().datetime(),clockDiscrepancy:z.boolean(),completionStatus:z.enum(["completed","incomplete","cancelled","interrupted"]),terminationReason:z.enum(["finished","patient_stopped","discomfort_reported","tracking_lost","backgrounded","model_error","recovered_crash"]),timing:CvTimingSchema,timingQuality:z.enum(["complete","partial"]),attemptedCycles:z.number().int().nonnegative(),movementCycles:z.number().int().nonnegative(),completedReps:z.number().int().nonnegative(),targetReps:z.number().int().positive(),shortHolds:z.number().int().nonnegative(),rangeDegrees:angle.nullable(),trackingQuality:z.enum(["available","partial","unavailable","simulated","patient_reported"]),feedbackSummary:z.partialRecord(CvFeedbackCodeSchema,z.number().int().nonnegative()),performanceScore:z.null(),scoreReason:z.literal("not_clinically_validated"),careReference:CvCareReferenceSchema.optional(),analysisMethod:z.literal("gemini_landmark_analysis").optional()}).strict();
-export const CvSessionSchema=z.object({featureVersion:z.literal(CV_FEATURE_VERSION),id,exerciseId:CvExerciseIdSchema,side:z.enum(["left","right"]),evidence:CvEvidenceSchema,configuration:CvConfigSchema,startedAtUtc:z.string().datetime(),serverReceivedAtUtc:z.string().datetime(),status:z.enum(["running","paused","finished"]),trackingValid:z.boolean(),sessionControlRevision:z.number().int().nonnegative(),acknowledgedSequence:z.number().int().nonnegative(),attemptedCycles:z.number().int().nonnegative(),movementCycles:z.number().int().nonnegative(),completedReps:z.number().int().nonnegative(),report:CvReportSchema.nullable(),careReference:CvCareReferenceSchema.optional(),analysisMethod:z.literal("gemini_landmark_analysis").optional()}).strict();
+export const CvReportSchema=z.object({featureVersion:z.literal(CV_FEATURE_VERSION),sessionId:id,exerciseId:CvExerciseIdSchema,side:z.enum(["left","right"]),configuration:CvConfigSchema,evidence:CvEvidenceSchema,configurationMode:z.literal("synthetic_demo"),startedAtUtc:z.string().datetime(),observedEndedAtUtc:z.string().datetime(),clockDiscrepancy:z.boolean(),completionStatus:z.enum(["completed","incomplete","cancelled","interrupted"]),terminationReason:z.enum(["finished","patient_stopped","discomfort_reported","tracking_lost","backgrounded","model_error","recovered_crash"]),timing:CvTimingSchema,timingQuality:z.enum(["complete","partial"]),attemptedCycles:z.number().int().nonnegative(),movementCycles:z.number().int().nonnegative(),completedReps:z.number().int().nonnegative(),targetReps:z.number().int().positive(),shortHolds:z.number().int().nonnegative(),rangeDegrees:angle.nullable(),trackingQuality:z.enum(["available","partial","unavailable","simulated","patient_reported"]),feedbackSummary:z.partialRecord(CvFeedbackCodeSchema,z.number().int().nonnegative()),performanceScore:z.null(),scoreReason:z.literal("not_clinically_validated"),careReference:CvCareReferenceSchema.optional(),analysisMethod:z.literal("gemini_landmark_analysis").optional(),measurementMethod:z.literal("local_pose_engine").optional()}).strict();
+export const CvSessionSchema=z.object({featureVersion:z.literal(CV_FEATURE_VERSION),id,exerciseId:CvExerciseIdSchema,side:z.enum(["left","right"]),evidence:CvEvidenceSchema,configuration:CvConfigSchema,startedAtUtc:z.string().datetime(),serverReceivedAtUtc:z.string().datetime(),status:z.enum(["running","paused","finished"]),trackingValid:z.boolean(),sessionControlRevision:z.number().int().nonnegative(),acknowledgedSequence:z.number().int().nonnegative(),attemptedCycles:z.number().int().nonnegative(),movementCycles:z.number().int().nonnegative(),completedReps:z.number().int().nonnegative(),report:CvReportSchema.nullable(),careReference:CvCareReferenceSchema.optional(),analysisMethod:z.literal("gemini_landmark_analysis").optional(),measurementMethod:z.literal("local_pose_engine").optional()}).strict();
 
 export { CvRepAnalysisSchema,CvRepAnalysisInputSchema,CvPoseFrameSchema,CvCalibrationAssistInputSchema,CvCalibrationAssistResponseSchema,type CvRepAnalysis,type CvRepAnalysisInput,type CvRepAnalysisResponse,type CvCalibrationAssistInput,type CvCalibrationAssistResponse } from "../yuvraj-integration/contracts";
