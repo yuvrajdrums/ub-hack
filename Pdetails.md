@@ -39,6 +39,7 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current work is on branch `
 ## Cloudflare public demo deployment
 
 - Current release branch: `yuvraj/cloudflare-public-demo`, based on the model-selector-only branch. Cloudflare Workers serves the full app and API; D1 stores demo reports. The public Worker middleware assigns each browser a signed, HTTP-only visitor identity so D1 records remain isolated by visitor.
+- Source commit `c5e0114` is pushed to the fork branch `yuvraj/cloudflare-public-demo` on https://github.com/yuvrajdrums/ub-hack.
 - `PANDA_CF_PUBLIC_DEMO=true` enables public identity translation in `hosting/worker/index.ts`. It overwrites browser-supplied OpenAI identity headers and uses a 30-day signed visitor cookie; `REHAB_CV_AUTH_SECRET` must be a Worker secret. `nodejs_compat_populate_process_env` exposes configured runtime secrets to the existing server handlers.
 - The public page says not to enter personal details; camera frames stay on the device. Gemini/auth credentials are stored as Cloudflare Worker secrets, not in config or source. The dedicated D1 database and migration are deployed.
 - Public Worker URL: https://panda-care-rehab-demo.yuvrajmunjal1.workers.dev/rehab
