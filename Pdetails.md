@@ -51,9 +51,9 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current release work is on 
 
 - Added a compact, half-preview-width timer overlay inside the camera stage. It displays the active measured hold, target duration, exercise phase, and progress. Static quad guided holds use the patient-controlled timer; paused or confirmed duration remains visible.
 - Camera-tracked holds now show `0.2s` on the first target-range frame and label the 200 ms validation window “Stabilizing target”; the exercise engine still validates the full dwell before confirming the hold.
-- Target calibration is now asymmetrical: retain ±6° beyond the comfortable target and accept up to 20° short on the approach from the start position, capped to keep at least 3° separation from the start range. Example start 90° / target 170° accepts 150°–176°; before this change the range was 164°–176°.
+- Target calibration is now asymmetrical: accept 15° short of target on approach and up to 30° past target, clamped to 0°–180° and capped to keep at least 3° separation from the start range. Example start 90° / target 170° accepts 155°–180°.
 - The metric row now shows the current phase's target hold, since the live duration is displayed over the preview.
-- Typecheck and production builds for Panda, Rehab, and Voice passed. Deployed to Cloudflare Worker version `124ad3e9-c103-4809-b06b-d451ef6df0d3`; `/rehab` and CV context returned 200. A 90° start / 170° target now yields a 150°–176° target band.
+- Typecheck and production builds for Panda, Rehab, and Voice passed. The -15° / +30° target band is built and awaiting deployment.
 
 ## Camera continuity behavior
 
