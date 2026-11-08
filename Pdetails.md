@@ -1,6 +1,6 @@
 ## Summary
 
-Build Yuvraj's standalone Rehab camera-to-text demo. Current work is on branch `yuvraj/camera-to-text`; the approved implementation spec is `../../outputs/Panda Care/spec.md`. Camera, deterministic exercise evaluation, server-side Gemini text and saved reports are required; Care/Voice are later integrations.
+Build Yuvraj's standalone Rehab camera-to-text demo. Current release work is on branch `yuvraj/cloudflare-public-demo`; the approved implementation spec is `../../outputs/Panda Care/spec.md`. Camera, deterministic exercise evaluation, server-side Gemini text and saved reports are required; Care/Voice are later integrations.
 
 - Baseline commit: `ce405fd027e6d8b1d872d00501353c1c21a2a456`.
 - Existing v2 routes/contracts remain operational. New scoped contracts live in `packages/contracts/rehab-cv.ts`, with routes `/rehab/api/cv/v1/*`.
@@ -46,6 +46,12 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current work is on branch `
 - Deployed to Cloudflare Workers with D1 storage and Worker secrets for Gemini and visitor signing. The public /rehab page, CV context endpoint and empty session report endpoint returned 200; Gemini reports configured, four exercise configs loaded and Lite/Full/Heavy selector is present.
 - Verified two independent HTTPS browser sessions each received a different signed Secure visitor cookie and an isolated empty report list. The camera pipeline remains client-side; actual phone movement, rep counting and live Gemini wording still need hands-on validation from Yuvraj's phone.
 - Redeployed the current built release on 2026-11-08; Worker version `b8cc5d6e-df74-489d-99ce-2dad9158a14d`. Post-deploy `/rehab` and CV context checks returned 200, and Gemini remains configured.
+
+## Live hold duration overlay
+
+- Added a compact, half-preview-width timer overlay inside the camera stage. It displays the active measured hold, target duration, exercise phase, and progress. Static quad guided holds use the patient-controlled timer; paused or confirmed duration remains visible.
+- The metric row now shows the current phase's target hold, since the live duration is displayed over the preview.
+- Typecheck and production builds for Panda, Rehab, and Voice passed. Publishing to Cloudflare is the remaining step for this UI change.
 
 ## Camera continuity behavior
 

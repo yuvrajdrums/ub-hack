@@ -71,3 +71,4 @@
 - 2026-11-08 00:30:28 -05:00 — Deployed the public Cloudflare Worker with Gemini and visitor-signing secrets plus D1 storage; verified the public Rehab page, CV context, Gemini readiness, model selector, and distinct signed visitor cookies with isolated empty reports.
 - 2026-11-08 00:33:00 -05:00 — Committed release documentation and code as `c5e0114` and pushed `yuvraj/cloudflare-public-demo` to the user's GitHub fork for review.
 - 2026-11-08 00:53:19 -05:00 — Redeployed the current Cloudflare build as Worker version `b8cc5d6e-df74-489d-99ce-2dad9158a14d`; `/rehab` and CV context returned 200 with Gemini configured.
+- 2026-11-08 01:08:07 -05:00 — Added a half-preview-width live hold overlay with elapsed/target time, phase label and progress; guided hold duration stays visible when paused or confirmed. Typecheck and all three production builds passed; preparing the Cloudflare release.

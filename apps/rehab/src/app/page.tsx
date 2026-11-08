@@ -11,7 +11,7 @@ import styles from "./cv.module.css";
 type Run = {
   transport: SessionTransport; config: EngineConfig; engine: ExerciseState; timing: TimingState;
   start: number; paused: boolean; terminal: boolean; finishing: boolean; tracking: boolean;
-  frameAt: number; checkpointAt: number; guidedAt: number | null; guidedMs: number;
+  frameAt: number; checkpointAt: number; guidedAt: number | null; guidedMs: number; guidedHoldMs: number;
   cursor: number; polling: boolean; pollAt:number; attempts: Map<string,string>; feedbackRanks: Map<string,number>;
   shownRank: number; finishReport: CvFinishInput["report"] | null;
 };
@@ -170,7 +170,7 @@ export default function Rehab() {
       const ranges=deriveCalibration(value.configuration.startAngleDeg,value.configuration.targetAngleDeg);
       const config={...defaultEngineConfig(exercise),holdMs:value.configuration.targetHoldMs,flexionHoldMs:value.configuration.flexionHoldMs,...(ranges?{startRangeDeg:ranges.startRangeDeg,targetRangeDeg:ranges.targetRangeDeg}:{})};
       const transport=new SessionTransport(value,context,acceptFeedback,setError);
-      const r:Run={transport,config,engine:createExerciseState(),timing:createTimingState(start),start,paused:false,terminal:false,finishing:false,tracking:false,frameAt:performance.now(),checkpointAt:start,guidedAt:null,guidedMs:0,cursor:0,polling:false,pollAt:0,attempts:new Map(),feedbackRanks:new Map(),shownRank:0,finishReport:null};
+      const r:Run={transport,config,engine:createExerciseState(),timing:createTimingState(start),start,paused:false,terminal:false,finishing:false,tracking:false,frameAt:performance.now(),checkpointAt:start,guidedAt:null,guidedMs:0,guidedHoldMs:0,cursor:0,polling:false,pollAt:0,attempts:new Map(),feedbackRanks:new Map(),shownRank:0,finishReport:null};
       run.current=r;setSession(value);setEngine(r.engine);setPaused(false);setFeedback(null);setLastReport(null);setTrace(simulated);
       tick(r,performance.now());
       if(simulated || staticQuads){r.tracking=simulated;enqueue(r,{type:"tracking_changed",valid:simulated||staticQuads},performance.now());}
@@ -186,7 +186,7 @@ export default function Rehab() {
       if(traceTimer.current){clearInterval(traceTimer.current);traceTimer.current=null;}
       const invalid=invalidateExercise(r.engine,"user_pause",now-r.start);r.engine=invalid.state;
       if(invalid.attempt)saveAttempt(r,invalid.attempt,now);
-      if(r.guidedAt!==null){r.guidedMs+=Math.max(0,now-r.guidedAt);r.guidedAt=null;}
+      if(r.guidedAt!==null){const holdMs=Math.max(0,now-r.guidedAt);r.guidedMs+=holdMs;r.guidedHoldMs=holdMs;r.guidedAt=null;}
       const summary=tick(r,now,true);r.transport.checkpoint(summary,summary.elapsedTimeMs);r.terminal=true;
       r.finishReport={observedEndedAtUtc:new Date().toISOString(),completionStatus:status,terminationReason:reason,timing:summary,timingQuality:"complete"};
       camera.stop();setGuided(false);setTrace(false);
@@ -201,13 +201,13 @@ export default function Rehab() {
   finishAction.current=finish;
   function pauseResume() {
     const r=run.current;if(!r || r.terminal)return;const now=performance.now();
-    if(!r.paused){const invalid=invalidateExercise(r.engine,"user_pause",now-r.start);r.engine=invalid.state;setEngine(invalid.state);if(invalid.attempt)saveAttempt(r,invalid.attempt,now);if(r.guidedAt!==null){r.guidedMs+=Math.max(0,now-r.guidedAt);r.guidedAt=null;setGuided(false);}}
+    if(!r.paused){const invalid=invalidateExercise(r.engine,"user_pause",now-r.start);r.engine=invalid.state;setEngine(invalid.state);if(invalid.attempt)saveAttempt(r,invalid.attempt,now);if(r.guidedAt!==null){const holdMs=Math.max(0,now-r.guidedAt);r.guidedMs+=holdMs;r.guidedHoldMs=holdMs;r.guidedAt=null;setGuided(false);}}
     r.paused=!r.paused;tick(r,now);enqueue(r,{type:"session_state_changed",action:r.paused?"pause":"resume"},now);setPaused(r.paused);setCaption(r.paused?"Set paused. Timed holds and repetition counting are stopped.":"Set resumed. Return to your start position to begin a new movement.");
   }
   function guidedHold() {
     const r=run.current;if(!r || r.terminal||r.paused)return;const now=performance.now();
-    if(r.guidedAt===null){r.guidedAt=now;setGuided(true);setCaption("Guided timer running. Only you can confirm the muscle contraction.");return;}
-    const duration=now-r.guidedAt;r.guidedMs+=duration;r.guidedAt=null;setGuided(false);
+    if(r.guidedAt===null){r.guidedHoldMs=0;r.guidedAt=now;setGuided(true);setCaption("Guided timer running. Only you can confirm the muscle contraction.");return;}
+    const duration=now-r.guidedAt;r.guidedMs+=duration;r.guidedHoldMs=duration;r.guidedAt=null;setGuided(false);
     const result=completeGuidedHold(r.engine,duration,true,r.config);r.engine=result.state;setEngine(result.state);if(result.attempt)saveAttempt(r,result.attempt,now);
     setCaption(duration>=r.config.holdMs?"Your patient-confirmed hold is recorded.":"Your confirmation was recorded as a shorter guided hold.");
   }
@@ -234,7 +234,11 @@ export default function Rehab() {
 
   const calibrated=calibration.start!==null&&calibration.target!==null&&!!deriveCalibration(calibration.start,calibration.target);
   const running=!!session;
-  const holdDisplay=staticQuads&&run.current?.guidedAt!=null?performance.now()-run.current.guidedAt:engine.currentHoldMs;
+  const now=performance.now();
+  const holdDisplay=staticQuads?(run.current?.guidedHoldMs??0)+(run.current?.guidedAt===null||run.current?.guidedAt===undefined?0:Math.max(0,now-run.current.guidedAt)):engine.currentHoldMs;
+  const holdTargetMs=staticQuads?(run.current?.config.holdMs??configuration?.targetHoldMs??0):engine.phase==="return_hold"?(configuration?.flexionHoldMs||configuration?.targetHoldMs||0):(configuration?.targetHoldMs??0);
+  const holdProgress=holdTargetMs>0?Math.min(100,holdDisplay/holdTargetMs*100):0;
+  const holdStatus=!running?"Waiting for set":paused?"Paused":staticQuads?(guided?"Guided hold in progress":holdDisplay>0?"Last guided hold":"Start guided hold"):engine.phase==="holding"?"Holding target position":engine.phase==="return_hold"?"Holding start position":"Waiting for hold position";
   return <div className={styles.workspace}>
     <div className={styles.intro}><div><div className={styles.eyebrow}>Yuvraj / Camera to text</div><h1>Every movement.<br/>A little more clarity.</h1><p>Track your demonstration, see what was measured, and get clear text feedback as you move. Public demo: camera frames stay on your device; do not enter personal details.</p></div><span className={styles.scope}>Public exercise demo</span></div>
     <p className={`${styles.status} ${error?styles.error:""}`} role="status">{error||notice}</p>
@@ -246,11 +250,16 @@ export default function Rehab() {
           <video ref={camera.videoRef} muted playsInline autoPlay style={{transform:"scaleX(-1)"}} aria-label="Live camera preview"/><canvas ref={camera.canvasRef} aria-hidden="true"/>
           {camera.status!=="tracking"&&<div className={styles.stageEmpty}><svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><rect x="5" y="12" width="27" height="24" rx="5" stroke="currentColor" strokeWidth="2"/><path d="m32 20 11-6v20l-11-6" stroke="currentColor" strokeWidth="2"/></svg><h3>{trace?"Example movements":"A clear view starts here"}</h3><p>{trace?"The trace tests the same movement engine. It is always labeled simulated.":staticQuads?"Static quads uses a guided timer and your confirmation. Camera inference cannot verify muscle contraction.":"Place the camera side-on so your working hip, knee and ankle stay visible."}</p></div>}
           <span className={styles.stageLabel}>{trace?"TRACE / SIMULATED":measurement.valid?"WORKING LEG VISIBLE":"POSITION YOUR CAMERA"}</span>
+          {running&&<div className={styles.holdHud} role="timer" aria-label={`${staticQuads?"Guided":"Live"} hold duration`}>
+            <div className={styles.holdHudHead}><span>{staticQuads?"GUIDED HOLD":"LIVE HOLD"}</span><strong>{seconds(holdDisplay)}<small>s</small></strong></div>
+            <div className={styles.holdHudFoot}><span>{holdStatus}</span><span>of {seconds(holdTargetMs)}s</span></div>
+            <div className={styles.holdProgress} role="progressbar" aria-label="Hold target progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(holdProgress)} aria-valuetext={`${seconds(holdDisplay)} seconds of ${seconds(holdTargetMs)} seconds`}><span style={{width:`${holdProgress}%`}}/></div>
+          </div>}
           <div className={styles.stageBottom}><span>{measurement.angle===null?"Angle unavailable":`${measurement.angle.toFixed(0)}° estimated ${exercise==="straight-leg-raise"?"elevation":"knee angle"}`}</span><span>{camera.backend?`${camera.backend} · ${measurement.inferenceMs.toFixed(0)} ms inference`:"No microphone or speech required"}</span></div>
         </div>
         <div className={styles.cameraActions}><button disabled={!context||running||busy||camera.status==="permission"||camera.status==="loading"} onClick={()=>void camera.start()}>{camera.status==="permission"?"Waiting for permission…":camera.status==="loading"?"Loading pose model…":"Enable camera"}</button><button className={styles.outline} onClick={()=>{camera.stop();setMeasurement(empty);if(run.current)void finish("interrupted","patient_stopped");}}>Stop camera</button><small>One person · side view · clear working leg</small></div>
         {camera.error&&<p className={`${styles.status} ${styles.error}`}>{camera.error}</p>}
-        <div className={styles.metrics}><div className={styles.metric}><strong>{engine.movementCycles}</strong><span>Full movements</span></div><div className={styles.metric}><strong>{engine.qualifyingReps}/{configuration?.targetReps??10}</strong><span>Met demo targets</span></div><div className={styles.metric}><strong>{seconds(holdDisplay)}s</strong><span>{staticQuads?"Guided hold":"Current hold"}</span></div><div className={styles.metric}><strong>{clock(timing.elapsedTimeMs)}</strong><span>Elapsed time</span></div></div>
+        <div className={styles.metrics}><div className={styles.metric}><strong>{engine.movementCycles}</strong><span>Full movements</span></div><div className={styles.metric}><strong>{engine.qualifyingReps}/{configuration?.targetReps??10}</strong><span>Met demo targets</span></div><div className={styles.metric}><strong>{seconds(holdTargetMs)}s</strong><span>Hold target</span></div><div className={styles.metric}><strong>{clock(timing.elapsedTimeMs)}</strong><span>Elapsed time</span></div></div>
       </section>
       <section className={styles.feedback} aria-label="Panda text feedback"><div className={styles.feedbackTop}><span className={styles.eyebrow}>Panda feedback</span><span className={styles.source}>{feedback?.textSource==="gemini_selected_approved_variant"?"Gemini selected wording":feedback?.generationStatus==="pending"?"Natural wording pending":"Immediate text"}</span></div><blockquote aria-live="polite">{caption}</blockquote><p>{paused?"Paused":running?engine.phase.replaceAll("_"," "):"Ready when you are"} · {staticQuads?`Guided time ${clock(timing.guidedTimerMs??0)}`:`Active ${clock(timing.activeTimeMs)} · Paused ${clock(timing.pausedTimeMs)}`}</p></section>
     </div><div className={styles.sideStack}>

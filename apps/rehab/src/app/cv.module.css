@@ -26,6 +26,15 @@
 .stageEmpty h3 { font-size:20px; margin:0 0 10px; }
 .stageEmpty p { font-size:13px; color:#bdd0c3; margin:0; }
 .stageLabel { position:absolute; z-index:2; top:16px; left:16px; display:inline-flex; align-items:center; gap:7px; border:1px solid #ffffff30; border-radius:6px; background:#102e28c9; color:white; padding:7px 10px; font-size:11px; }
+.holdHud { position:absolute; z-index:3; top:16px; right:16px; width:50%; max-width:252px; padding:12px 14px; border:1px solid #ffffff30; border-radius:12px; background:#102e28ed; color:#fff; box-shadow:0 8px 24px #071d1870; backdrop-filter:blur(8px); }
+.holdHudHead { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+.holdHudHead > span { color:#d9edbd; font-size:9px; font-weight:700; letter-spacing:1px; }
+.holdHudHead strong { font-size:27px; line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-1px; }
+.holdHudHead small { margin-left:3px; font-size:12px; letter-spacing:0; }
+.holdHudFoot { display:flex; justify-content:space-between; align-items:start; gap:6px; margin-top:7px; color:#e0ede0; font-size:10px; line-height:1.3; font-variant-numeric:tabular-nums; }
+.holdHudFoot span:last-child { white-space:nowrap; }
+.holdProgress { height:5px; overflow:hidden; margin-top:8px; border-radius:100px; background:#ffffff35; }
+.holdProgress span { display:block; height:100%; border-radius:inherit; background:#d9edbd; transition:width .18s linear; }
 .stageBottom { position:absolute; bottom:15px; left:16px; right:16px; z-index:2; display:flex; justify-content:space-between; gap:8px; color:#e0ede0; font-size:11px; }
 .cameraActions { padding:17px 20px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
 .cameraActions small { color:var(--muted); margin-left:auto; font-size:11px; }
@@ -83,5 +92,5 @@
 .trace button { font-size:12px; }
 .footnote { margin:22px 0 0; color:var(--muted); font-size:11px; }
 @media(max-width:900px) { .layout { grid-template-columns:minmax(0,1fr); } .sideStack { grid-template-columns:1fr 1fr; } .historyGrid { grid-template-columns:1fr 1fr; } .intro { grid-template-columns:1fr; gap:16px; } .scope { justify-self:start; } }
-@media(max-width:600px) { .sideStack,.historyGrid { grid-template-columns:1fr; } .intro h1 { font-size:37px; } .stage { aspect-ratio:4/3; } .metric strong { font-size:24px; } .metric { padding:16px 5px; } .metric span { font-size:9px; } .cameraActions small { margin:0; flex-basis:100%; } .feedback { padding:20px; } .feedbackTop { align-items:start; } }
-@media(prefers-reduced-motion:reduce) { .progress span { transition:none; } }
+@media(max-width:600px) { .sideStack,.historyGrid { grid-template-columns:1fr; } .intro h1 { font-size:37px; } .stage { aspect-ratio:4/3; } .holdHud { top:12px; right:12px; padding:10px 11px; } .holdHudHead > span { font-size:8px; letter-spacing:.7px; } .holdHudHead strong { font-size:24px; } .holdHudFoot { font-size:9px; } .metric strong { font-size:24px; } .metric { padding:16px 5px; } .metric span { font-size:9px; } .cameraActions small { margin:0; flex-basis:100%; } .feedback { padding:20px; } .feedbackTop { align-items:start; } }
+@media(prefers-reduced-motion:reduce) { .progress span,.holdProgress span { transition:none; } }
