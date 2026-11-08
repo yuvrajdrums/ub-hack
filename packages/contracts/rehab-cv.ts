@@ -10,6 +10,64 @@ export type CvFeedbackCode = z.infer<typeof CvFeedbackCodeSchema>;
 const id = z.string().uuid();
 const duration = z.number().finite().min(0).max(43_200_000);
 const angle = z.number().finite().min(0).max(180);
+const landmarkScalar=z.number().finite().min(-5).max(5);
+export const CvRepAnalysisSchema=z.object({
+  attemptedCycles:z.number().int().min(0).max(100000),
+  movementCycles:z.number().int().min(0).max(100000),
+  completedReps:z.number().int().min(0).max(100000),
+  shortHolds:z.number().int().min(0).max(100000),
+  phase:z.enum(["await_start","armed","outbound","holding","returning","return_hold","uncertain"]),
+  currentHoldMs:duration,
+  confidence:z.number().finite().min(0).max(1),
+  cue:z.string().max(180),
+  workingMemory:z.string().max(1200),
+  rangeDegrees:angle.nullable(),
+}).strict().superRefine((v,ctx)=>{
+  if(v.movementCycles>v.attemptedCycles)ctx.addIssue({code:"custom",message:"Completed movements cannot exceed attempted cycles"});
+  if(v.completedReps>v.movementCycles)ctx.addIssue({code:"custom",message:"Qualifying repetitions cannot exceed completed movements"});
+  if(v.shortHolds>v.attemptedCycles)ctx.addIssue({code:"custom",message:"Short holds cannot exceed attempted cycles"});
+});
+export type CvRepAnalysis=z.infer<typeof CvRepAnalysisSchema>;
+export const CvPoseFrameSchema=z.object({
+  offsetMs:duration,
+  personCount:z.number().int().min(0).max(10),
+  // Compact tuples preserve each model landmark as [x, y, z, visibility, presence].
+  landmarks:z.array(z.tuple([landmarkScalar,landmarkScalar,landmarkScalar,landmarkScalar.nullable(),landmarkScalar.nullable()])).length(33),
+}).strict();
+export const CvRepAnalysisInputSchema=z.object({
+  requestId:id,
+  batchSequence:z.number().int().min(1).max(100000),
+  frames:z.array(CvPoseFrameSchema).min(1).max(8),
+}).strict();
+export type CvRepAnalysisInput=z.infer<typeof CvRepAnalysisInputSchema>;
+export interface CvRepAnalysisResponse { batchSequence:number; analysis:CvRepAnalysis; session:CvSession }
+export const CvCalibrationAssistInputSchema=z.object({
+  requestId:id,
+  exerciseId:CvExerciseIdSchema.exclude(["static-quads"]),
+  side:z.enum(["left","right"]),
+  requestedPosition:z.enum(["rest","comfortable_target","auto"]),
+  previous:z.object({
+    detectedPosition:z.enum(["rest","comfortable_target","transition","uncertain"]),
+    workingMemory:z.string().max(1200),
+    startAngleDeg:angle.nullable(),
+    targetAngleDeg:angle.nullable(),
+  }).strict().nullable().optional(),
+  frames:z.array(CvPoseFrameSchema).min(3).max(8).superRefine((frames,ctx)=>{
+    for(let i=1;i<frames.length;i++)if(frames[i].offsetMs<=frames[i-1].offsetMs)ctx.addIssue({code:"custom",message:"Calibration frames must be timestamped in increasing order",path:[i,"offsetMs"]});
+    if(frames.length>1 && frames.at(-1)!.offsetMs-frames[0].offsetMs<500)ctx.addIssue({code:"custom",message:"Calibration evidence must span at least half a second",path:["frames"]});
+  }),
+}).strict();
+export type CvCalibrationAssistInput=z.infer<typeof CvCalibrationAssistInputSchema>;
+export const CvCalibrationAssistResponseSchema=z.object({
+  detectedPosition:z.enum(["rest","comfortable_target","transition","uncertain"]),
+  accepted:z.boolean(),
+  angleDeg:angle.nullable(),
+  confidence:z.number().finite().min(0).max(1),
+  stable:z.boolean(),
+  cue:z.string().max(180),
+  workingMemory:z.string().max(1200),
+}).strict();
+export type CvCalibrationAssistResponse=z.infer<typeof CvCalibrationAssistResponseSchema>;
 export const CvCalibrationSchema = z.object({ startAngleDeg: angle, targetAngleDeg: angle }).strict();
 export type CvCalibration = z.infer<typeof CvCalibrationSchema>;
 

@@ -14,7 +14,7 @@ In that checkout, use the installed Sites dependency/build/source helpers. `.ope
 
 ## Runtime settings
 
-Configure `REHAB_GEMINI_API_KEY` and `REHAB_CV_AUTH_SECRET` as Site secrets. Set `REHAB_GEMINI_MODE=controlled`, `REHAB_GEMINI_MODEL=gemini-3.5-flash-lite`, `REHAB_GEMINI_TIMEOUT_MS=2000` and `REHAB_DEMO_ALLOWED_ORIGIN` to the exact published origin. Never commit credentials. Local preview uses ignored `.dev.vars` and loopback-only mock ChatGPT identity. Production identity comes only from Sites dispatch.
+Configure `PANDA_GEMINI_API_KEY` and `REHAB_CV_AUTH_SECRET` as Site secrets. Set `REHAB_GEMINI_MODE=controlled`, `REHAB_GEMINI_MODEL=gemini-3.6-flash`, `REHAB_GEMINI_TIMEOUT_MS=5000` and `REHAB_DEMO_ALLOWED_ORIGIN` to the exact published origin. Never commit credentials. Local preview uses ignored `.dev.vars` and loopback-only mock ChatGPT identity. Production identity comes only from Sites dispatch.
 
 ## Persistence and limits
 

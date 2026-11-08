@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PoseLandmarker } from "@mediapipe/tasks-vision";
+import { continuityAnchor, type TrackingProfile } from "./tracking-profile";
+import { poseModelFor, type PoseModelId } from "./pose-models";
 
 export type CameraLandmark = { x: number; y: number; z: number; visibility?: number; presence?: number };
 export type CameraFrame = {
+  // Capture time drives observation order; delivery time drives freshness.
   timestampMs: number;
+  receivedAtMs:number;
   landmarks: CameraLandmark[];
   width: number;
   height: number;
@@ -13,10 +17,15 @@ export type CameraFrame = {
   inferenceMs: number;
 };
 type CameraStatus = "off" | "permission" | "loading" | "tracking" | "error";
+const debugPoseConnections: [number, number][] = [
+  [0,1],[1,2],[2,3],[3,7],[0,4],[4,5],[5,6],[6,8],[9,10],
+  [11,12],[11,13],[13,15],[15,17],[15,19],[15,21],[17,19],
+  [12,14],[14,16],[16,18],[16,20],[16,22],[18,20],
+  [11,23],[12,24],[23,24],[23,25],[25,27],[27,29],[29,31],[27,31],
+  [24,26],[26,28],[28,30],[30,32],[28,32],
+];
 
-const connections = [[11,12],[11,23],[12,24],[23,24],[23,25],[24,26],[25,27],[26,28],[27,29],[28,30],[29,31],[30,32]];
-
-export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupted: (reason: string) => void) {
+export function usePoseCamera(profile:TrackingProfile,onFrame: (frame: CameraFrame) => void, onInterrupted: (reason: string) => void,poseModel:PoseModelId="lite") {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -24,6 +33,7 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
   const generation = useRef(0);
   const animation = useRef(0);
   const videoCallback = useRef<number|null>(null);
+  const nextFrameTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
   const mounted = useRef(true);
   const frameHandler = useRef(onFrame);
   const interruptHandler = useRef(onInterrupted);
@@ -36,6 +46,8 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
   const stop = useCallback(() => {
     generation.current += 1;
     cancelAnimationFrame(animation.current);
+    if(nextFrameTimer.current!==null)clearTimeout(nextFrameTimer.current);
+    nextFrameTimer.current=null;
     if(videoCallback.current!==null)videoRef.current?.cancelVideoFrameCallback?.(videoCallback.current);
     videoCallback.current=null;
     stream.current?.getTracks().forEach((track) => { track.onended = null; track.stop(); });
@@ -56,6 +68,7 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
     let acquired: MediaStream | null = null;
     let loaded: PoseLandmarker | null = null;
     try {
+      if(!profile.requiresPose)throw new Error("This exercise uses your guided-hold confirmation; camera tracking is not required.");
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("Use HTTPS or localhost in a browser that supports camera access.");
       acquired = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 720 } } });
       if (!mounted.current || generation.current !== token || document.hidden) { acquired.getTracks().forEach((t) => t.stop()); return; }
@@ -69,9 +82,8 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
       const { FilesetResolver, PoseLandmarker: Landmarker } = await import("@mediapipe/tasks-vision");
       const files = await FilesetResolver.forVisionTasks("/rehab/mediapipe");
       const create = (delegate: "GPU" | "CPU") => Landmarker.createFromOptions(files, {
-        baseOptions: { modelAssetPath: "/rehab/models/pose_landmarker_lite.task", delegate },
-        runningMode: "VIDEO", numPoses: 2,
-        minPoseDetectionConfidence: 0.6, minPosePresenceConfidence: 0.6, minTrackingConfidence: 0.6,
+        baseOptions: { modelAssetPath: poseModelFor(poseModel).assetPath, delegate },
+        runningMode: "VIDEO", ...profile.modelOptions,
       });
       let delegate = "GPU";
       try { loaded = await create("GPU"); } catch { delegate = "CPU"; loaded = await create("CPU"); }
@@ -83,15 +95,15 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
       let lastTime = -1;
       let lastFrame = -1;
       let lastBody:{x:number;y:number;scale:number}|null=null;
-      const schedule = () => {
+      const schedule = (idleMs=0) => {
         if(generation.current!==token)return;
+        if(idleMs>0){nextFrameTimer.current=setTimeout(()=>{nextFrameTimer.current=null;schedule();},idleMs);return;}
         if(typeof video.requestVideoFrameCallback==="function")videoCallback.current=video.requestVideoFrameCallback(loop);
         else animation.current=requestAnimationFrame(loop);
       };
       const loop = (now: number) => {
         if (generation.current !== token || !model.current) return;
-        schedule();
-        if (now - lastTime < 75 || video.readyState < 2 || video.currentTime === lastFrame) return;
+        if (now - lastTime < 75 || video.readyState < 2 || video.currentTime === lastFrame) {schedule();return;}
         lastTime = now;
         lastFrame = video.currentTime;
         try {
@@ -100,8 +112,8 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
           const canvas = canvasRef.current;
           if (canvas && (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight)) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
           const pose=result.landmarks.length===1?result.landmarks[0]:null;
-          if(pose && [23,24,25,26].every(i=>(pose[i]?.visibility??0)>=.6)){
-            const body={x:(pose[23].x+pose[24].x)/2,y:(pose[23].y+pose[24].y)/2,scale:Math.hypot(pose[23].x-pose[25].x,pose[23].y-pose[25].y)};
+          const body=pose?continuityAnchor(pose,profile):null;
+          if(body){
             if(lastBody && (Math.hypot(body.x-lastBody.x,body.y-lastBody.y)>.25 || (lastBody.scale>.03 && Math.abs(body.scale/lastBody.scale-1)>.6))){
               stop();setError("Camera position or tracked person changed. Recalibrate before starting again.");interruptHandler.current("Tracking continuity changed");return;
             }
@@ -110,21 +122,23 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
           const ctx = canvas?.getContext("2d");
           if (ctx && canvas) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            if (result.landmarks.length === 1) {
-              const points = result.landmarks[0];
+            for (const points of result.landmarks) {
               ctx.strokeStyle = "#b9efce"; ctx.lineWidth = 4;
-              for (const [a,b] of connections) {
-                if ((points[a]?.visibility ?? 0) < .6 || (points[b]?.visibility ?? 0) < .6) continue;
+              for (const [a,b] of debugPoseConnections) {
+                if (!points[a] || !points[b] || !Number.isFinite(points[a].x) || !Number.isFinite(points[a].y) || !Number.isFinite(points[b].x) || !Number.isFinite(points[b].y)) continue;
                 ctx.beginPath();ctx.moveTo(points[a].x * canvas.width, points[a].y * canvas.height);ctx.lineTo(points[b].x * canvas.width, points[b].y * canvas.height);ctx.stroke();
               }
-              for (const i of [11,12,23,24,25,26,27,28]) {
-                const p = points[i];
-                if ((p?.visibility ?? 0) < .6) continue;
+              for (const p of points) {
+                if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
                 ctx.fillStyle = "#fff";ctx.beginPath();ctx.arc(p.x*canvas.width,p.y*canvas.height,6,0,Math.PI*2);ctx.fill();
               }
             }
           }
-          frameHandler.current({ timestampMs: before, landmarks: result.landmarks[0] ?? [], width: video.videoWidth, height: video.videoHeight, personCount: result.landmarks.length, inferenceMs: performance.now() - before });
+          const receivedAtMs=performance.now();
+          frameHandler.current({ timestampMs: before, receivedAtMs, landmarks: result.landmarks[0] ?? [], width: video.videoWidth, height: video.videoHeight, personCount: result.landmarks.length, inferenceMs: receivedAtMs - before });
+          // The Web model is synchronous. Leave time for controls/rendering,
+          // especially when a phone needs hundreds of milliseconds per frame.
+          schedule(Math.max(32,Math.min(100,(receivedAtMs-before)*0.25)));
         } catch {
           stop(); setError("Pose tracking stopped. Reload the camera to try again.");setStatus("error");interruptHandler.current("Pose model error");
         }
@@ -138,7 +152,7 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
       const message = e instanceof Error ? e.message : "Camera could not start.";
       setError(message);setStatus("error");
     }
-  }, [stop]);
+  }, [stop,profile,poseModel]);
 
   useEffect(() => {
     mounted.current = true;

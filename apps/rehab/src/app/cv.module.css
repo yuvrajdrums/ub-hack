@@ -42,6 +42,19 @@
 .calibration button strong { font-size:20px; letter-spacing:-.5px; }
 .calibration button small { font-size:10px; color:var(--muted); font-weight:400; }
 .calibration .captured { border-color:#98b78b; background:#edf6e8; }
+.calibrationItem { min-width:0; padding:12px; border:1px solid var(--line); border-radius:12px; background:#f7f9f4; display:grid; align-content:start; gap:7px; }
+.calibrationItem > span { color:var(--muted); font-size:11px; font-weight:700; }
+.calibrationItem > strong { font-size:23px; letter-spacing:-.5px; }
+.calibrationItem > small { min-height:31px; color:var(--muted); font-size:10px; line-height:1.5; }
+.calibrationActions { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.calibrationActions button { min-height:42px; padding:8px 6px; font-size:10px; text-align:center; }
+.calibrationActions button.secondary { background:#edf2e9; color:var(--ink); }
+.calibrationActions button.outline { background:white; border-color:var(--line); color:var(--green); }
+.calibrationHint { margin:9px 0 0; color:var(--muted); font-size:11px; line-height:1.5; }
+.calibrationInstruction { margin:0 0 9px; padding:10px 12px; border-radius:9px; background:#eef4e7; color:#35543d; font-size:12px; line-height:1.5; }
+.calibrationOverride { margin-top:10px; }
+.calibrationOverride summary { cursor:pointer; color:var(--muted); font-size:11px; }
+.calibrationOverride .calibrationActions { margin-top:8px; }
 .progress { height:7px; background:#e6eddf; border-radius:100px; overflow:hidden; }
 .progress span { display:block; height:100%; background:var(--green); border-radius:100px; transition:width .15s; }
 .runButton { width:100%; font-size:15px; }
@@ -82,6 +95,9 @@
 .trace p { color:var(--muted); font-size:12px; margin:12px 0; }
 .trace button { font-size:12px; }
 .footnote { margin:22px 0 0; color:var(--muted); font-size:11px; }
+.countingGuide { padding:14px 20px; background:#f0f5ec; border-top:1px solid var(--line); font-size:13px; line-height:1.6; }
+.countingGuide strong { color:#254e3c; font-weight:600; }
+.countingGuide p { margin:5px 0 0; color:var(--muted); font-size:12px; }
 @media(max-width:900px) { .layout { grid-template-columns:minmax(0,1fr); } .sideStack { grid-template-columns:1fr 1fr; } .historyGrid { grid-template-columns:1fr 1fr; } .intro { grid-template-columns:1fr; gap:16px; } .scope { justify-self:start; } }
-@media(max-width:600px) { .sideStack,.historyGrid { grid-template-columns:1fr; } .intro h1 { font-size:37px; } .stage { aspect-ratio:4/3; } .metric strong { font-size:24px; } .metric { padding:16px 5px; } .metric span { font-size:9px; } .cameraActions small { margin:0; flex-basis:100%; } .feedback { padding:20px; } .feedbackTop { align-items:start; } }
+@media(max-width:600px) { .sideStack,.historyGrid { grid-template-columns:1fr; } .intro h1 { font-size:37px; } .stage { aspect-ratio:4/3; } .metric strong { font-size:24px; } .metric { padding:16px 5px; } .metric span { font-size:9px; } .cameraActions small { margin:0; flex-basis:100%; } .calibrationActions { grid-template-columns:1fr; } .feedback { padding:20px; } .feedbackTop { align-items:start; } }
 @media(prefers-reduced-motion:reduce) { .progress span { transition:none; } }

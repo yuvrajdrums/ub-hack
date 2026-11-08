@@ -10,5 +10,6 @@ for(const name of ['apps/rehab/src/app/page.tsx','apps/rehab/src/app/cv.module.c
  const dest=path.join(target,'shared',name);await mkdir(path.dirname(dest),{recursive:true});await copyFile(path.join(repo,name),dest);
 }
 await cp(path.join(repo,'apps/rehab/src/features'),path.join(target,'shared/apps/rehab/src/features'),{recursive:true});
+await cp(path.join(repo,'apps/rehab/src/server/cv/skills'),path.join(target,'shared/apps/rehab/src/server/cv/skills'),{recursive:true});
 await cp(path.join(repo,'apps/rehab/public'),path.join(target,'public/rehab'),{recursive:true});
 console.log(`Phone hosting source prepared at ${target}`);

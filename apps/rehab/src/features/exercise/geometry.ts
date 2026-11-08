@@ -72,11 +72,11 @@ export interface AngleFilterState { window: number[]; value: number | null; atMs
 export const createAngleFilter = (): AngleFilterState => ({ window: [], value: null, atMs: null });
 /** Causal three-sample median + EMA; invalid/gapped data resets rather than bridges a trajectory. */
 export function filterAngle(state: AngleFilterState, angle: number | null, atMs: number,
-  options: { alpha?: number; maximumSampleGapMs?: number } = {}): AngleFilterState {
+  options: { alpha?: number; maximumSampleGapMs?: number; medianWindow?:1|3 } = {}): AngleFilterState {
   if (!Number.isFinite(atMs) || angle === null || !Number.isFinite(angle)) return createAngleFilter();
   if (state.atMs !== null && atMs <= state.atMs) return state;
   const reset = state.atMs === null || atMs - state.atMs > (options.maximumSampleGapMs ?? 250);
-  const window = [...(reset ? [] : state.window), angle].slice(-3);
+  const window = [...(reset ? [] : state.window), angle].slice(-(options.medianWindow??3));
   const ordered = [...window].sort((a, b) => a - b);
   const median = ordered[Math.floor(ordered.length / 2)];
   const alpha = Math.max(0, Math.min(1, options.alpha ?? 0.35));

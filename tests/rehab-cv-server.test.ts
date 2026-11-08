@@ -22,9 +22,9 @@ function event(sequence:number,changes:Partial<CvEventCandidate>={}):CvEventCand
 function timing(ms=130000):CvTiming {return {elapsedTimeMs:ms,activeTimeMs:96000,pausedTimeMs:ms-96000,userPausedTimeMs:14000,trackingPausedTimeMs:20000,otherPausedTimeMs:ms-130000};}
 function finish(lastMeasurementSequence:number):CvFinishInput {return {requestId:randomUUID(),lastMeasurementSequence,report:{observedEndedAtUtc:"2026-11-07T22:02:10.000Z",completionStatus:"completed",terminationReason:"finished",timing:timing(),timingQuality:"complete"}};}
 function controlled(t:test.TestContext) {
-  const names=["REHAB_GEMINI_MODE","REHAB_GEMINI_API_KEY","REHAB_GEMINI_MODEL"];
+  const names=["REHAB_GEMINI_MODE","PANDA_GEMINI_API_KEY","REHAB_GEMINI_MODEL"];
   const before=names.map(n=>process.env[n]);
-  process.env.REHAB_GEMINI_MODE="controlled";process.env.REHAB_GEMINI_API_KEY="test-only-key";process.env.REHAB_GEMINI_MODEL="test-model";
+  process.env.REHAB_GEMINI_MODE="controlled";process.env.PANDA_GEMINI_API_KEY="test-only-key";process.env.REHAB_GEMINI_MODEL="test-model";
   t.after(()=>names.forEach((n,i)=>{if(before[i]===undefined)delete process.env[n];else process.env[n]=before[i];}));
 }
 test("CV ordered admission rejects gaps, deduplicates requests, and binds reports to their owner",async t=>{

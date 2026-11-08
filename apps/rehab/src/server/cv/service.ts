@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
-  CV_FEATURE_VERSION,CvStartSchema,CvEventInputSchema,CvFinishSchema,CvGenerateSchema,
+  CV_FEATURE_VERSION,CvStartSchema,CvEventInputSchema,CvFinishSchema,CvGenerateSchema,CvCalibrationAssistInputSchema,
+  type CvCalibrationAssistResponse,
+  CvRepAnalysisInputSchema,type CvRepAnalysis,type CvRepAnalysisResponse,
   type CvSession,type CvReport,type CvFeedbackText,type CvFeedbackCode,type CvEventResult,type CvChange,
 } from "../../../../../packages/contracts/rehab-cv";
 import { JsonStore,DomainError,once,dataFile,type Receipt } from "../../../../../packages/platform/json-store";
 import { configFor,phraseVariants } from "./config";
-import { geminiReadiness,selectPhrase } from "./gemini";
+import { analyzeCalibrationPosition,analyzePoseBatch,geminiReadiness,selectPhrase } from "./gemini";
 
 type StoredSession = CvSession & {
   owner:string;
@@ -16,6 +18,8 @@ type StoredSession = CvSession & {
   lastTechniqueMs:number|null;
   lastCodeMs:Partial<Record<CvFeedbackCode,number>>;
   generationStarts:Record<string,string>;
+  analysis:CvRepAnalysis|null;
+  analysisBatchSequence:number;
 };
 export type CvStoreData = {sessions:StoredSession[];receipts:Record<string,Receipt>};
 type Store = CvStoreData;
@@ -60,7 +64,17 @@ export function cvService(file=dataFile("rehab-cv"),options:{now?:()=>Date;fetch
   const db=options.store || new JsonStore<Store>(file,()=>({sessions:[],receipts:{}}));
   const now=options.now || (()=>new Date());
   const inFlight=new Map<string,Promise<CvFeedbackText>>();
+  const analysisQueues=new Map<string,Promise<CvRepAnalysisResponse>>();
   return {
+    async calibrate(_owner:string,raw:unknown):Promise<CvCalibrationAssistResponse> {
+      const v=CvCalibrationAssistInputSchema.parse(raw);
+      if(!geminiReadiness().configured||geminiReadiness().mode!=="controlled")throw new DomainError("GEMINI_UNAVAILABLE","Gemini calibration is not configured",503);
+      try {
+        return await analyzeCalibrationPosition(v,options.fetcher);
+      } catch(error) {
+        throw new DomainError("GEMINI_CALIBRATION_FAILED",error instanceof Error?error.message:"Gemini could not analyze this calibration snapshot",502);
+      }
+    },
     async start(owner:string,raw:unknown):Promise<CvSession> {
       const v=CvStartSchema.parse(raw);
       return db.update(store=>once(store.receipts,`${owner}:start:${v.requestId}`,v,()=>{
@@ -76,12 +90,39 @@ export function cvService(file=dataFile("rehab-cv"),options:{now?:()=>Date;fetch
         const session:StoredSession={...feature,id:randomUUID(),owner,exerciseId:v.exerciseId,side:v.side,evidence:v.evidence,configuration:config,
           startedAtUtc:v.startedAtUtc,serverReceivedAtUtc:date.toISOString(),status:"running",trackingValid:v.exerciseId==="static-quads",
           sessionControlRevision:0,acknowledgedSequence:0,attemptedCycles:0,movementCycles:0,completedReps:0,report:null,
-          events:[],feedback:[],changes:[],lastOffsetMs:0,lastTechniqueMs:null,lastCodeMs:{},generationStarts:{}};
+          events:[],feedback:[],changes:[],lastOffsetMs:0,lastTechniqueMs:null,lastCodeMs:{},generationStarts:{},analysis:null,analysisBatchSequence:0};
         store.sessions.push(session);return publicSession(session);
       }));
     },
     async get(owner:string,id:string):Promise<CvSession> {return publicSession(owned(await db.snapshot(),id,owner));},
     async reports(owner:string):Promise<CvReport[]> {return (await db.snapshot()).sessions.filter(s=>s.owner===owner && s.report).map(s=>s.report!);},
+    async analyze(owner:string,id:string,raw:unknown):Promise<CvRepAnalysisResponse> {
+      const v=CvRepAnalysisInputSchema.parse(raw),key=`${owner}:${id}`;
+      const previous=analysisQueues.get(key)?.catch(()=>undefined);
+      const work=(previous??Promise.resolve(undefined)).then(async()=>{
+        const before=owned(await db.snapshot(),id,owner);
+        if(before.status!=="running")throw new DomainError("SESSION_INACTIVE","Gemini analysis requires a running set",409);
+        if(before.evidence!=="camera_estimated")throw new DomainError("EVIDENCE_MISMATCH","Gemini pose analysis requires camera landmarks",400);
+        const previousSequence=before.analysisBatchSequence??0;
+        if(v.batchSequence<=previousSequence && before.analysis)return {batchSequence:previousSequence,analysis:structuredClone(before.analysis),session:publicSession(before)};
+        if(v.batchSequence!==previousSequence+1)throw new DomainError("ANALYSIS_SEQUENCE","Pose batches must be analyzed in order",409);
+        const analysis=await analyzePoseBatch({exerciseId:before.exerciseId,side:before.side,startAngleDeg:before.configuration.startAngleDeg,targetAngleDeg:before.configuration.targetAngleDeg,targetHoldMs:before.configuration.targetHoldMs,flexionHoldMs:before.configuration.flexionHoldMs,previous:before.analysis,frames:v.frames},options.fetcher);
+        return db.update(store=>{
+          const session=owned(store,id,owner);
+          if(session.status!=="running")throw new DomainError("SESSION_INACTIVE","Gemini analysis requires a running set",409);
+          const acceptedSequence=session.analysisBatchSequence??0;
+          if(v.batchSequence<=acceptedSequence && session.analysis)return {batchSequence:acceptedSequence,analysis:structuredClone(session.analysis),session:publicSession(session)};
+          if(v.batchSequence!==acceptedSequence+1)throw new DomainError("ANALYSIS_SEQUENCE","Pose batches must be analyzed in order",409);
+          if(session.analysis&&(analysis.attemptedCycles<session.analysis.attemptedCycles||analysis.movementCycles<session.analysis.movementCycles||analysis.completedReps<session.analysis.completedReps||analysis.shortHolds<session.analysis.shortHolds))
+            throw new DomainError("ANALYSIS_REGRESSION","Gemini returned a lower cumulative count; the previous analysis was kept",502);
+          session.analysis=analysis;session.analysisBatchSequence=v.batchSequence;
+          session.attemptedCycles=analysis.attemptedCycles;session.movementCycles=analysis.movementCycles;session.completedReps=analysis.completedReps;
+          return {batchSequence:v.batchSequence,analysis:structuredClone(analysis),session:publicSession(session)};
+        });
+      });
+      analysisQueues.set(key,work);
+      try{return await work;}finally{if(analysisQueues.get(key)===work)analysisQueues.delete(key);}
+    },
     async events(owner:string,id:string,raw:unknown):Promise<CvEventResult> {
       const v=CvEventInputSchema.parse(raw);
       return db.update(store=>once(store.receipts,`${owner}:event:${v.requestId}`,{id,...v},()=>{
@@ -95,9 +136,10 @@ export function cvService(file=dataFile("rehab-cv"),options:{now?:()=>Date;fetch
         const emit=(code:CvFeedbackCode,attemptId:string|null=null)=>{const f=feedback(s,code,now(),attemptId);if(f)generated.push(f);};
         s.lastOffsetMs=e.observedOffsetMs;
         if(e.type==="attempt_finalized") {
+          if(s.evidence==="camera_estimated")throw new DomainError("GEMINI_ANALYSIS_REQUIRED","Camera rep counts are produced from Gemini pose analysis",400);
           if(s.events.some(p=>p.type==="attempt_finalized" && p.attemptId===e.attemptId))throw new DomainError("ATTEMPT_REUSED","Attempt already finalized");
           if(s.evidence==="unavailable")throw new DomainError("EVIDENCE_MISMATCH","Unavailable tracking cannot claim an attempt",400);
-          if((s.status!=="running" || (s.evidence==="camera_estimated" && !s.trackingValid)) && !e.invalidated)throw new DomainError("MEASUREMENT_PAUSED","A paused or untracked camera session cannot complete an attempt",400);
+          if(s.status!=="running" && !e.invalidated)throw new DomainError("MEASUREMENT_PAUSED","A paused session cannot complete an attempt",400);
           if(e.holdMs>e.observedOffsetMs || (e.flexionHoldMs||0)>e.observedOffsetMs)throw new DomainError("IMPOSSIBLE_DURATION","Hold exceeds the observed session duration",400);
           const qualifies=e.movementComplete && e.targetReached && !e.invalidated && !e.kneeBent && e.reason!=="target_overshoot" && e.holdMs>=s.configuration.targetHoldMs && (e.flexionHoldMs||0)>=s.configuration.flexionHoldMs;
           if(e.qualifying!==qualifies)throw new DomainError("MEASUREMENT_MISMATCH","Qualifying count does not match captured hold/target rules",400);
@@ -141,9 +183,9 @@ export function cvService(file=dataFile("rehab-cv"),options:{now?:()=>Date;fetch
           startedAtUtc:s.startedAtUtc,observedEndedAtUtc:v.report.observedEndedAtUtc,clockDiscrepancy:Math.abs(Date.parse(v.report.observedEndedAtUtc)-Date.parse(s.startedAtUtc)-v.report.timing.elapsedTimeMs)>2000,
           completionStatus:status,terminationReason:v.report.terminationReason,timing:v.report.timing,timingQuality:v.report.timingQuality,
           attemptedCycles:s.attemptedCycles,movementCycles:s.movementCycles,completedReps:s.completedReps,targetReps:s.configuration.targetReps,
-          shortHolds:attempts.filter(e=>!e.invalidated && e.targetReached && (e.holdMs<s.configuration.targetHoldMs || (e.flexionHoldMs||0)<s.configuration.flexionHoldMs)).length,
-          rangeDegrees:ranges.length?Math.max(...ranges):null,
-          trackingQuality:s.evidence==="simulated"?"simulated":s.evidence==="patient_reported"?"patient_reported":s.evidence==="unavailable" || !attempts.length?"unavailable":s.events.some(e=>e.type==="tracking_changed" && !e.valid)?"partial":"available",
+          shortHolds:s.analysis?.shortHolds??attempts.filter(e=>!e.invalidated && e.targetReached && (e.holdMs<s.configuration.targetHoldMs || (e.flexionHoldMs||0)<s.configuration.flexionHoldMs)).length,
+          rangeDegrees:s.analysis?.rangeDegrees??(ranges.length?Math.max(...ranges):null),
+          trackingQuality:s.evidence==="simulated"?"simulated":s.evidence==="patient_reported"?"patient_reported":s.evidence==="unavailable" || (s.evidence==="camera_estimated" && !s.analysisBatchSequence)?"unavailable":s.events.some(e=>e.type==="tracking_changed" && !e.valid)?"partial":"available",
           feedbackSummary:s.feedback.reduce((out,f)=>({...out,[f.feedbackCode]:(out[f.feedbackCode]||0)+1}),{} as Partial<Record<CvFeedbackCode,number>>),
           performanceScore:null,scoreReason:"not_clinically_validated"};
         s.report=report;s.status="finished";s.sessionControlRevision++;
