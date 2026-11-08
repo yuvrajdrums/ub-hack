@@ -1,5 +1,11 @@
 # Panda Care — three-app team starter, v0.2
 
+## New: standalone camera-to-text Rehab demo
+
+Yuvraj's `/rehab` now includes actual pinned MediaPipe inference, stable reference calibration, separate movement/qualifying counts, continuous holds, session timing, immediate text, server-side Gemini wording and immutable CV reports/history. Run `npm run dev:yuvraj` and open http://localhost:3002/rehab. Care and Voice are not required for this flow.
+
+Read [the camera-to-text runbook](docs/YUVRAJ_CAMERA_TO_TEXT.md) for setup, tests, scope and evidence limitations. Scoped routes use `/rehab/api/cv/v1`; old v2 APIs remain available separately. Browser verification uses virtual-camera/synthetic evidence; physical phone/laptop exercise QA remains a manual validation step.
+
 One phone/browser product, three independently runnable web apps. Responsibilities are split by complete product functions. This revision supersedes the previous single-app starter and contract v1.
 
 | Person | App | Owns the complete function | Standalone URL |
@@ -52,7 +58,7 @@ For cross-app navigation and integration, use `npm run dev` and port 3000. Stand
 
 ## Work still to build
 
-**This is a working integration starter, not the completed care product.** Real pose inference/calibration/rep counting is Yuvraj's first major task. PDF/OCR extraction is pending. Paid AI/speech calls are wired but were not tested with real credentials; browser microphone/camera behavior needs actual-device testing. Full-duplex ElevenLabs Agents is an optional upgrade; the supplied speech adapter is text-to-speech, not a realtime agent.
+**This is a working integration starter, not the completed care product.** The standalone camera-to-text feature is implemented under its scoped contract; physical-device exercise validation remains required. PDF/OCR extraction is pending. Paid AI/speech calls are wired but were not tested with real credentials; browser microphone/camera behavior needs actual-device testing. Full-duplex ElevenLabs Agents is an optional upgrade; the supplied speech adapter is text-to-speech, not a realtime agent.
 
 Identities are fixed synthetic demo identities. There is no real authentication/authorization, patient isolation, durable production database, production job runner, actual clinician delivery, EHR connection, appointments, outbound calls, wearables, caregiver sharing, PWA/offline support or native app. A local JSON store supports one server process per app and is unsuitable for serverless replicas. Do not publish this demo with real patient data or paid unauthenticated endpoints.
 

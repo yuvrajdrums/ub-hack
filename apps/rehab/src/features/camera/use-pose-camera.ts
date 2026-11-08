@@ -23,6 +23,7 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
   const model = useRef<PoseLandmarker | null>(null);
   const generation = useRef(0);
   const animation = useRef(0);
+  const videoCallback = useRef<number|null>(null);
   const mounted = useRef(true);
   const frameHandler = useRef(onFrame);
   const interruptHandler = useRef(onInterrupted);
@@ -35,6 +36,8 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
   const stop = useCallback(() => {
     generation.current += 1;
     cancelAnimationFrame(animation.current);
+    if(videoCallback.current!==null)videoRef.current?.cancelVideoFrameCallback?.(videoCallback.current);
+    videoCallback.current=null;
     stream.current?.getTracks().forEach((track) => { track.onended = null; track.stop(); });
     stream.current = null;
     model.current?.close();
@@ -79,9 +82,15 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
       acquired.getTracks().forEach((track) => { track.onended = () => { stop(); interruptHandler.current("Camera access ended"); }; });
       let lastTime = -1;
       let lastFrame = -1;
+      let lastBody:{x:number;y:number;scale:number}|null=null;
+      const schedule = () => {
+        if(generation.current!==token)return;
+        if(typeof video.requestVideoFrameCallback==="function")videoCallback.current=video.requestVideoFrameCallback(loop);
+        else animation.current=requestAnimationFrame(loop);
+      };
       const loop = (now: number) => {
         if (generation.current !== token || !model.current) return;
-        animation.current = requestAnimationFrame(loop);
+        schedule();
         if (now - lastTime < 75 || video.readyState < 2 || video.currentTime === lastFrame) return;
         lastTime = now;
         lastFrame = video.currentTime;
@@ -89,7 +98,15 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
           const before = performance.now();
           const result = model.current.detectForVideo(video, before);
           const canvas = canvasRef.current;
-          if (canvas && canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
+          if (canvas && (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight)) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
+          const pose=result.landmarks.length===1?result.landmarks[0]:null;
+          if(pose && [23,24,25,26].every(i=>(pose[i]?.visibility??0)>=.6)){
+            const body={x:(pose[23].x+pose[24].x)/2,y:(pose[23].y+pose[24].y)/2,scale:Math.hypot(pose[23].x-pose[25].x,pose[23].y-pose[25].y)};
+            if(lastBody && (Math.hypot(body.x-lastBody.x,body.y-lastBody.y)>.25 || (lastBody.scale>.03 && Math.abs(body.scale/lastBody.scale-1)>.6))){
+              stop();setError("Camera position or tracked person changed. Recalibrate before starting again.");interruptHandler.current("Tracking continuity changed");return;
+            }
+            lastBody=body;
+          }
           const ctx = canvas?.getContext("2d");
           if (ctx && canvas) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -112,7 +129,7 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
           stop(); setError("Pose tracking stopped. Reload the camera to try again.");setStatus("error");interruptHandler.current("Pose model error");
         }
       };
-      animation.current = requestAnimationFrame(loop);
+      schedule();
     } catch (e) {
       acquired?.getTracks().forEach((track) => track.stop());
       loaded?.close();

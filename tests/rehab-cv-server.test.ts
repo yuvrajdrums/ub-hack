@@ -131,6 +131,10 @@ test("Demo identity cookies persist across reload while CSRF/origin and remote b
   assert.equal((await requireIdentity(req())).subject,first.subject);
   await assert.rejects(()=>requireIdentity(req("https://attacker.example")),/origin/);
   await assert.rejects(()=>requireIdentity(req("http://localhost:3002","bad")),/Refresh/);
+  const ipBootstrap=await contextResponse(new Request("http://localhost:3002/rehab/api/cv/v1/context",{headers:{host:"127.0.0.1:3002",origin:"http://127.0.0.1:3002"}}));
+  assert.equal(ipBootstrap.status,200,"Next's internal localhost normalization must not reject the actual loopback browser origin");
+  const rebound=await contextResponse(new Request("http://localhost:3002/rehab/api/cv/v1/context",{headers:{host:"attacker.example",origin:"http://attacker.example"}}));
+  assert.equal(rebound.status,401,"An external Host cannot use the internal loopback URL to bypass remote bootstrap protection");
   const remote=await contextResponse(new Request("https://public.example/rehab/api/cv/v1/context"));assert.equal(remote.status,401);
 });
 test("Body limits reject oversized or non-JSON input",async()=>{

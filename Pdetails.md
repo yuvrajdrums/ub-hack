@@ -11,3 +11,11 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current work is on branch `
 - Root owns dependency/asset setup, integration, review and checkpoints. Sub-agents own disjoint engine, server/contracts and camera/UI files.
 - User explicitly authorized implementation, sub-agents and checkpoints every two minutes. Recovery snapshots are outside the checkout under `../../work/checkpoints/` while work is active; meaningful verified milestones are local Git commits.
 - Run `npm run check`, `npm run build`, `npm run test:integration`, scoped CV tests and browser verification. Actual camera/mobile/Gemini results must be distinguished from synthetic/mocked tests.
+
+## Current implementation and verification
+
+- Camera/model loading, live overlay, stable calibration, four exercise protocols, immediate/validated text, server-side Gemini, ordered event recovery, Finish barrier and immutable report/history are implemented. Standalone navigation stays inside Rehab.
+- Commands: `npm run dev:yuvraj`, `npm run cv:assets`, `npm run test:cv`, `npm run test:browser`, `npm run test:cv:http`. Runbook: `docs/YUVRAJ_CAMERA_TO_TEXT.md`.
+- Verified: 48 unit/domain tests, six browser scenarios, all three production builds, 16 production gateway integration checks and all three standalone starts. Real Gemini wording succeeded on synthetic evidence using the existing local environment credential. No credential appeared in browser assets.
+- Browser tests exercise the real bundled pose model on a virtual camera; movement traces are explicitly simulated. Physical laptop/phone exercise observations remain manual validation, and no clinical accuracy is claimed.
+- Key local setting is configured in ignored root `.env.local`; never print or commit it. Existing v2 APIs stay separate from CV report storage. Ranveer TTS/playback and Care acknowledgement remain later integrations.

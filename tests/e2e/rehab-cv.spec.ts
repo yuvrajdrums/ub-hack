@@ -25,13 +25,46 @@ test("standalone trace reaches text, saves once, and survives reload",async({pag
   await page.getByRole("button",{name:"Pause",exact:true}).click();
   await expect(page.getByRole("button",{name:"Resume",exact:true})).toBeVisible();
   await page.getByRole("button",{name:"Resume",exact:true}).click();
+  let lostFinish=false;
+  await page.route("**/api/cv/v1/sessions/*/finish",async route=>{
+    if(!lostFinish){lostFinish=true;await route.fetch();await route.abort("failed");}
+    else await route.continue();
+  });
   await page.getByRole("button",{name:"Finish and save",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Retry save",exact:true})).toBeVisible({timeout:15000});
+  await page.getByRole("button",{name:"Retry save",exact:true}).click();
   await expect(page.getByRole("status")).toContainText("Report saved once",{timeout:15000});
   await expect(page.getByRole("article")).toHaveCount(1);
   await expect(page.getByRole("article")).toContainText("2 movements · 1 met targets");
   await expect(page.getByRole("article")).toContainText("simulated");
   await page.reload();await expect(page.getByRole("article")).toHaveCount(1);
   expect(errors).toEqual([]);
+});
+
+for(const exerciseId of ["straight-leg-raise","seated-knee-flexion-extension"]){
+  test(`${exerciseId} uses its own trace protocol and persists a truthful result`,async({page})=>{
+    await page.goto("/rehab");await page.getByLabel("Exercise",{exact:true}).selectOption(exerciseId);
+    await page.getByText("Try a clearly labeled example trace",{exact:true}).click();
+    await page.getByRole("button",{name:"Run sample movements",exact:true}).click();
+    await expect(page.getByRole("status")).toContainText("Simulated trace complete",{timeout:35000});
+    await expect(page.locator("[role=progressbar]")).toHaveAttribute("aria-valuenow","1");
+    await page.getByRole("button",{name:"Finish and save",exact:true}).click();
+    await expect(page.getByRole("status")).toContainText("Report saved once",{timeout:15000});
+    await expect(page.getByRole("article")).toContainText("2 movements · 1 met targets");
+  });
+}
+
+test("static quads records patient confirmation without camera evidence",async({page})=>{
+  await page.goto("/rehab");await page.getByLabel("Exercise",{exact:true}).selectOption("static-quads");
+  await page.getByRole("button",{name:"Start set",exact:true}).click();
+  await page.getByRole("button",{name:"Start guided hold",exact:true}).click();
+  await page.waitForTimeout(5200);
+  await page.getByRole("button",{name:"Confirm this hold",exact:true}).click();
+  await expect(page.locator("[role=progressbar]")).toHaveAttribute("aria-valuenow","1");
+  await page.getByRole("button",{name:"Finish and save",exact:true}).click();
+  await expect(page.getByRole("status")).toContainText("Report saved once",{timeout:15000});
+  await expect(page.getByRole("article")).toContainText("patient reported");
+  await expect(page.getByRole("article")).toContainText("Active 0:00");
 });
 
 test("small screen stays within viewport and denied camera recovers",async({page})=>{

@@ -1,16 +1,16 @@
 import "@ui/theme.css";
-import { Shell } from "@ui/Shell";
 export const metadata = {
   title: "Panda · Rehab",
-  description: "Synthetic-data three-app starter",
+  description: "A standalone camera-to-text exercise demonstration with estimated movement feedback.",
 };
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <Shell owner="Yuvraj" app="rehab">
-          {children}
-        </Shell>
+        <header><a className="brand" href="/rehab">panda<span>care</span></a><nav aria-label="Exercise navigation"><a href="/rehab">Exercise</a><a href="#history">Saved history</a></nav><small>Yuvraj · Rehab</small></header>
+        <div className="notice">Demonstration references · Camera measurements are estimates · Not connected to a healthcare provider</div>
+        <main>{children}</main>
+        <footer>Camera-to-text demonstration · No microphone or speech required</footer>
       </body>
     </html>
   );

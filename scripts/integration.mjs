@@ -26,6 +26,7 @@ const proc = spawn(process.execPath, ["scripts/run.mjs", "start", "all"], {
     PANDA_DATA_DIR: dir,
     PANDA_INTEGRATION: "connected",
     PANDA_AI_MODE: "demo",
+    REHAB_DEMO_ALLOWED_ORIGIN: "http://127.0.0.1:3000",
   },
 });
 let logs = "";
@@ -71,7 +72,7 @@ try {
   for (const [route, label] of [
     ["/", "Talk to Panda"],
     ["/care", "A clear plan."],
-    ["/rehab", "Exercise workspace"],
+    ["/rehab", "Your movement workspace"],
   ]) {
     const r = await fetch(origin + route);
     assert.equal(r.status, 200);
@@ -198,6 +199,12 @@ try {
     },
     400,
   );
+  checks++;
+  const cvCheck=spawn(process.execPath,["scripts/cv-http-smoke.mjs"],{
+    stdio:"inherit",env:{...process.env,CV_TEST_ORIGIN:origin},
+  });
+  const cvCode=await new Promise(resolve=>cvCheck.once("exit",resolve));
+  assert.equal(cvCode,0,"Scoped CV endpoints must work through the production gateway");
   checks++;
   console.log(
     `PASS: ${checks} integrated checks across three built apps, one gateway origin, versioned plans, voice confirmation, reports, acknowledgement and assets.`,

@@ -17,6 +17,7 @@ if (
 const apps = selected === "all" ? ["care", "rehab", "panda"] : [selected];
 const env = {
   ...process.env,
+  ...(selected === "all" ? { REHAB_DEMO_ALLOWED_ORIGIN: process.env.REHAB_DEMO_ALLOWED_ORIGIN || "http://localhost:3000" } : {}),
   PANDA_INTEGRATION:
     process.env.PANDA_INTEGRATION ||
     (selected === "all" ? "connected" : "fixture"),

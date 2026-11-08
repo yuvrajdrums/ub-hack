@@ -43,7 +43,8 @@ A report acknowledgement is not a report edit. Asmita stores `{sessionId, by, at
 | Caregiver invitations and shared status | Asmita | Relationship/access grant, consent and portal; use original domain APIs |
 | Wearable/sensor integration | Yuvraj | Device/provider authorization, normalization, sensor evidence/history; require a separate supported-provider contract |
 | Installable-app experience | Asmita | Manifest/assets/install/offline states; all three verify their own route behavior |
-| Continuous voice during camera sessions | Ranveer, sole feature owner | Requires a new reviewed bridge with Yuvraj; MVP uses navigation and stops audio on exit |
+| Exercise-feedback Gemini text and secure Rehab-to-Voice bridge | Yuvraj | Camera-to-text is implemented; secure transport to Voice is a later reviewed integration |
+| TTS and playback during camera sessions | Ranveer | Owns synthesis, player, audio consent and interruptions; consumes Yuvraj's validated text/bridge |
 
 ## Production migration ownership
 

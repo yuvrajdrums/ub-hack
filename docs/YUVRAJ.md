@@ -1,3 +1,7 @@
+## Current build update
+
+The camera-to-text feature is now implemented under `/rehab/api/cv/v1` without a Care/Voice runtime dependency. Read `YUVRAJ_CAMERA_TO_TEXT.md` for the current runbook and tests. The revision-4 baseline guide below remains useful for domain boundaries but its statements about missing pose inference are historical. Secure voice transport remains Yuvraj's later integration; TTS/playback remains Ranveer's.
+
 # Yuvraj — Rehab / computer vision web app guide, revision 4
 
 You own `apps/rehab`, the complete exercise/vision function served at `/rehab`. You build its camera screen, model/inference, calibration, rep logic, session API, persistence, reports/history, errors and tests. You also own later wearable/sensor extensions. **Ranveer owns voice. Asmita owns care plans and clinician acknowledgement.**

@@ -11,7 +11,7 @@ type Run = {
   transport: SessionTransport; config: EngineConfig; engine: ExerciseState; timing: TimingState;
   start: number; paused: boolean; terminal: boolean; finishing: boolean; tracking: boolean;
   frameAt: number; checkpointAt: number; guidedAt: number | null; guidedMs: number;
-  cursor: number; polling: boolean; attempts: Map<string,string>; feedbackRanks: Map<string,number>;
+  cursor: number; polling: boolean; pollAt:number; attempts: Map<string,string>; feedbackRanks: Map<string,number>;
   shownRank: number; finishReport: CvFinishInput["report"] | null;
 };
 const empty = {valid:false,angle:null as number|null,knee:null as number|null,confidence:0,inferenceMs:0};
@@ -112,7 +112,7 @@ export default function Rehab() {
   const camera=usePoseCamera(onFrame,(reason)=>{
     setMeasurement(empty);setCalibration({start:null,target:null});samples.current=[];filter.current=createAngleFilter();
     setNotice(reason);
-    if(run.current&&!run.current.terminal)void finishAction.current("interrupted",reason.includes("hidden")?"backgrounded":"model_error");
+    if(run.current&&!run.current.terminal)void finishAction.current("interrupted",reason.includes("hidden")?"backgrounded":reason.includes("model")?"model_error":"tracking_lost");
   });
 
   useEffect(()=>{
@@ -135,7 +135,7 @@ export default function Rehab() {
       }
       const summary=tick(r,now);
       if(now-r.checkpointAt>=1000){r.checkpointAt=now;r.transport.checkpoint(summary,summary.elapsedTimeMs);}
-      if(!r.polling){r.polling=true;void cvApi<CvChanges>(`/sessions/${r.transport.session.id}/changes?after=${r.cursor}`).then(change=>{r.cursor=change.nextCursor;for(const item of change.changes)acceptFeedback(item.feedback);}).catch(()=>{}).finally(()=>{r.polling=false;});}
+      if(!r.polling&&now-r.pollAt>=1000){r.pollAt=now;r.polling=true;void cvApi<CvChanges>(`/sessions/${r.transport.session.id}/changes?after=${r.cursor}`).then(change=>{r.cursor=change.nextCursor;for(const item of change.changes)acceptFeedback(item.feedback);}).catch(()=>{}).finally(()=>{r.polling=false;});}
     },200);
     return()=>clearInterval(timer);
   },[trace]);
@@ -157,7 +157,7 @@ export default function Rehab() {
       const ranges=deriveCalibration(value.configuration.startAngleDeg,value.configuration.targetAngleDeg);
       const config={...defaultEngineConfig(exercise),holdMs:value.configuration.targetHoldMs,flexionHoldMs:value.configuration.flexionHoldMs,...(ranges?{startRangeDeg:ranges.startRangeDeg,targetRangeDeg:ranges.targetRangeDeg}:{})};
       const transport=new SessionTransport(value,context,acceptFeedback,setError);
-      const r:Run={transport,config,engine:createExerciseState(),timing:createTimingState(start),start,paused:false,terminal:false,finishing:false,tracking:false,frameAt:performance.now(),checkpointAt:start,guidedAt:null,guidedMs:0,cursor:0,polling:false,attempts:new Map(),feedbackRanks:new Map(),shownRank:0,finishReport:null};
+      const r:Run={transport,config,engine:createExerciseState(),timing:createTimingState(start),start,paused:false,terminal:false,finishing:false,tracking:false,frameAt:performance.now(),checkpointAt:start,guidedAt:null,guidedMs:0,cursor:0,polling:false,pollAt:0,attempts:new Map(),feedbackRanks:new Map(),shownRank:0,finishReport:null};
       run.current=r;setSession(value);setEngine(r.engine);setPaused(false);setFeedback(null);setLastReport(null);setTrace(simulated);
       tick(r,performance.now());
       if(simulated || staticQuads){r.tracking=simulated;enqueue(r,{type:"tracking_changed",valid:simulated||staticQuads},performance.now());}
@@ -188,7 +188,7 @@ export default function Rehab() {
   finishAction.current=finish;
   function pauseResume() {
     const r=run.current;if(!r || r.terminal)return;const now=performance.now();
-    if(!r.paused){const invalid=invalidateExercise(r.engine,"user_pause",now-r.start);r.engine=invalid.state;setEngine(invalid.state);if(invalid.attempt)saveAttempt(r,invalid.attempt,now);if(r.guidedAt!==null){r.guidedAt=null;setGuided(false);}}
+    if(!r.paused){const invalid=invalidateExercise(r.engine,"user_pause",now-r.start);r.engine=invalid.state;setEngine(invalid.state);if(invalid.attempt)saveAttempt(r,invalid.attempt,now);if(r.guidedAt!==null){r.guidedMs+=Math.max(0,now-r.guidedAt);r.guidedAt=null;setGuided(false);}}
     r.paused=!r.paused;tick(r,now);enqueue(r,{type:"session_state_changed",action:r.paused?"pause":"resume"},now);setPaused(r.paused);setCaption(r.paused?"Set paused. Timed holds and repetition counting are stopped.":"Set resumed. Return to your start position to begin a new movement.");
   }
   function guidedHold() {
@@ -203,7 +203,8 @@ export default function Rehab() {
     const start=r.transport.session.configuration.startAngleDeg,target=r.transport.session.configuration.targetAngleDeg;
     let elapsed=0;
     // Two deliberate fixture cycles: one short hold, then one qualifying hold.
-    const phases=[{ms:600,a:start},{ms:600,a:target},{ms:3000,a:target},{ms:700,a:start},{ms:700,a:start},{ms:600,a:target},{ms:5600,a:target},{ms:700,a:start},{ms:700,a:start},...(exercise==="seated-knee-flexion-extension"?[{ms:5600,a:start}]:[])];
+    const cycle=(hold:number)=>[{ms:600,a:start},{ms:600,a:target},{ms:hold,a:target},{ms:700,a:start},{ms:exercise==="seated-knee-flexion-extension"?5600:700,a:start}];
+    const phases=[...cycle(3000),...cycle(5600)];
     traceTimer.current=setInterval(()=>{
       if(run.current!==r || r.terminal){if(traceTimer.current)clearInterval(traceTimer.current);return;}
       if(r.paused)return;elapsed+=100;let t=elapsed;let current=phases.at(-1)!;
@@ -220,6 +221,7 @@ export default function Rehab() {
 
   const calibrated=calibration.start!==null&&calibration.target!==null&&!!deriveCalibration(calibration.start,calibration.target);
   const running=!!session;
+  const holdDisplay=staticQuads&&run.current?.guidedAt!=null?performance.now()-run.current.guidedAt:engine.currentHoldMs;
   return <div className={styles.workspace}>
     <div className={styles.intro}><div><div className={styles.eyebrow}>Yuvraj / Camera to text</div><h1>Every movement.<br/>A little more clarity.</h1><p>Track your demonstration, see what was measured, and get clear text feedback as you move.</p></div><span className={styles.scope}>Standalone exercise demo</span></div>
     <p className={`${styles.status} ${error?styles.error:""}`} role="status">{error||notice}</p>
@@ -235,7 +237,7 @@ export default function Rehab() {
         </div>
         <div className={styles.cameraActions}><button disabled={running||busy||camera.status==="permission"||camera.status==="loading"} onClick={()=>void camera.start()}>{camera.status==="permission"?"Waiting for permission…":camera.status==="loading"?"Loading pose model…":"Enable camera"}</button><button className={styles.outline} onClick={()=>{camera.stop();setMeasurement(empty);if(run.current)void finish("interrupted","patient_stopped");}}>Stop camera</button><small>One person · side view · clear working leg</small></div>
         {camera.error&&<p className={`${styles.status} ${styles.error}`}>{camera.error}</p>}
-        <div className={styles.metrics}><div className={styles.metric}><strong>{engine.movementCycles}</strong><span>Full movements</span></div><div className={styles.metric}><strong>{engine.qualifyingReps}/{configuration?.targetReps??10}</strong><span>Met demo targets</span></div><div className={styles.metric}><strong>{seconds(engine.currentHoldMs)}s</strong><span>Current hold</span></div><div className={styles.metric}><strong>{clock(timing.elapsedTimeMs)}</strong><span>Elapsed time</span></div></div>
+        <div className={styles.metrics}><div className={styles.metric}><strong>{engine.movementCycles}</strong><span>Full movements</span></div><div className={styles.metric}><strong>{engine.qualifyingReps}/{configuration?.targetReps??10}</strong><span>Met demo targets</span></div><div className={styles.metric}><strong>{seconds(holdDisplay)}s</strong><span>{staticQuads?"Guided hold":"Current hold"}</span></div><div className={styles.metric}><strong>{clock(timing.elapsedTimeMs)}</strong><span>Elapsed time</span></div></div>
       </section>
       <section className={styles.feedback} aria-label="Panda text feedback"><div className={styles.feedbackTop}><span className={styles.eyebrow}>Panda feedback</span><span className={styles.source}>{feedback?.textSource==="gemini_selected_approved_variant"?"Gemini selected wording":feedback?.generationStatus==="pending"?"Natural wording pending":"Immediate text"}</span></div><blockquote aria-live="polite">{caption}</blockquote><p>{paused?"Paused":running?engine.phase.replaceAll("_"," "):"Ready when you are"} · {staticQuads?`Guided time ${clock(timing.guidedTimerMs??0)}`:`Active ${clock(timing.activeTimeMs)} · Paused ${clock(timing.pausedTimeMs)}`}</p></section>
     </div><div className={styles.sideStack}>
@@ -249,7 +251,7 @@ export default function Rehab() {
       <section className={`${styles.panel} ${styles.guide}`}><h3>A comfortable setup</h3><ol><li>Place your camera side-on with your working leg fully visible.</li><li>Capture two comfortable references. Change position if tracking is unclear.</li><li>Move, hold and return. A movement and a target-complete repetition are shown separately.</li></ol><p className={styles.footnote}>Camera angles are estimates. Stop if uncomfortable. No clinician acknowledgement or medical correctness is implied.</p></section>
     </div></div>
     <details className={styles.trace}><summary>Try a clearly labeled example trace</summary><p>Test the same evaluator and text pipeline without a camera. Includes a short hold and a full hold. Saved evidence is simulated.</p><button disabled={!context||running||busy||!!recovery||staticQuads} className={styles.outline} onClick={()=>void replay()}>Run sample movements</button></details>
-    <section className={styles.history}><div className={styles.historyHeading}><h2>Saved exercise history</h2><span className={styles.badge}>{reports.length} saved</span></div>{reports.length?<div className={styles.historyGrid}>{[...reports].reverse().map(report=><article key={report.sessionId} className={styles.historyCard}><span className={`${styles.badge} ${report.evidence==="simulated"?styles.badgeAmber:""}`}>{report.evidence.replaceAll("_"," ")}</span><h3>{report.configuration.label}</h3><p><strong>{report.movementCycles} movements · {report.completedReps} met targets</strong></p><p>{report.completionStatus} · Active {clock(report.timing.activeTimeMs)} · Elapsed {clock(report.timing.elapsedTimeMs)}</p><p>{report.shortHolds} short holds · {report.side} leg · demo references</p></article>)}</div>:<p className={styles.emptyHistory}>Your measured or clearly labeled demonstration results will appear here after you save a set.</p>}</section>
+    <section id="history" className={styles.history}><div className={styles.historyHeading}><h2>Saved exercise history</h2><span className={styles.badge}>{reports.length} saved</span></div>{reports.length?<div className={styles.historyGrid}>{[...reports].reverse().map(report=><article key={report.sessionId} className={styles.historyCard}><span className={`${styles.badge} ${report.evidence==="simulated"?styles.badgeAmber:""}`}>{report.evidence.replaceAll("_"," ")}</span><h3>{report.configuration.label}</h3><p><strong>{report.movementCycles} movements · {report.completedReps} met targets</strong></p><p>{report.completionStatus} · Active {clock(report.timing.activeTimeMs)} · Elapsed {clock(report.timing.elapsedTimeMs)}</p><p>{report.shortHolds} short holds · {report.side} leg · demo references</p></article>)}</div>:<p className={styles.emptyHistory}>Your measured or clearly labeled demonstration results will appear here after you save a set.</p>}</section>
     <details className={styles.technical}><summary>Inspect final text and report JSON</summary><pre>{JSON.stringify({feedback,report:lastReport},null,2)}</pre></details>
   </div>;
 }
