@@ -76,3 +76,4 @@
 - 2026-11-08 01:22:01 -05:00 — Updated the camera timer to display 0.2s at the first target-range frame with a “Stabilizing target” label while preserving the engine's 200ms confirmation dwell. Typecheck and all three production builds passed.
 - 2026-11-08 01:23:06 -05:00 — Deployed the immediate 0.2s hold display to Cloudflare Worker version `d2eeab09-5f26-494c-8341-a06ae17e3f75`; verified page/context 200 and published timer/stabilization code.
 - 2026-11-08 01:27:53 -05:00 — Widened the camera target band from ±6° to a 20° approach tolerance toward the captured target, retaining ±6° beyond target and a 3° minimum gap from the start range. Typecheck and three app builds passed.
+- 2026-11-08 01:29:03 -05:00 — Deployed the wider comfortable-target hold band to Cloudflare Worker version `124ad3e9-c103-4809-b06b-d451ef6df0d3`; `/rehab` and CV context checks returned 200.
