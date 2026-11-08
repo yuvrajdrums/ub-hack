@@ -29,3 +29,31 @@
 
 - 2026-11-07 22:40:35 -05:00 — Two-minute recovery checkpoint 20261108T034035Z: 49 changed/new files snapshotted; HEAD 263bd0d.
 - 2026-11-07 22:42:12 -05:00 — Completed standalone camera-to-text implementation and runbook. Passed 48 tests, six browser scenarios, three production builds, 16 integrated checks, standalone startup, asset/secret checks and real Gemini wording on synthetic evidence; physical exercise QA remains manual.
+
+- 2026-11-07 22:54:12 -05:00 — Two-minute recovery checkpoint 20261108T035412Z: 50 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-07 22:56:13 -05:00 — Two-minute recovery checkpoint 20261108T035613Z: 50 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-07 22:57:28 -05:00 — Two-minute recovery checkpoint 20261108T035728Z: 50 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-07 22:58:13 -05:00 — Two-minute recovery checkpoint 20261108T035813Z: 50 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-07 22:59:28 -05:00 — Two-minute recovery checkpoint 20261108T035928Z: 50 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-07 23:00:13 -05:00 — Two-minute recovery checkpoint 20261108T040013Z: 50 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-07 23:01:28 -05:00 — Two-minute recovery checkpoint 20261108T040128Z: 50 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-07 23:02:13 -05:00 — Two-minute recovery checkpoint 20261108T040213Z: 50 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-07 23:03:28 -05:00 — Two-minute recovery checkpoint 20261108T040328Z: 50 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-07 23:04:14 -05:00 — Two-minute recovery checkpoint 20261108T040414Z: 51 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-08 04:05 UTC — Prepared owner-private phone hosting with ChatGPT identity, durable D1/CAS storage, persisted Gemini leases and a hydration readiness fix; 49 tests plus hosted-runtime HTTP, Gemini and virtual-camera checks passed.
+
+- 2026-11-07 23:06:14 -05:00 — Two-minute recovery checkpoint 20261108T040614Z: 172 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-07 23:08:15 -05:00 — Two-minute recovery checkpoint 20261108T040815Z: 171 changed/new files snapshotted; HEAD b57056a.
+
+- 2026-11-07 23:08:55 -05:00 — Published owner-private Panda Care Rehab on HTTPS with production Gemini secrets and D1 storage; source 1feca527346387a5188d1e5f4fe473c7d38cb624, deployment succeeded. All 49 tests and three app builds passed.

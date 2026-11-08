@@ -26,12 +26,12 @@ export async function selectPhrase(code:CvFeedbackCode,allowedPhrases:Record<str
       }),
     });
     if(!response.ok)return fallback(response.status===429?"rate_limited":response.status===404?"invalid_model":"provider_error");
-    const data=await response.json();
+    const data=await response.json() as {candidates?:{finishReason?:string;content?:{parts?:Record<string,unknown>[]}}[];promptFeedback?:{blockReason?:string}};
     const candidate=data.candidates?.[0];
     if(!candidate || candidate.finishReason!=="STOP" || data.promptFeedback?.blockReason)return fallback("blocked_or_incomplete");
     const parts=candidate.content?.parts;
     if(!Array.isArray(parts) || parts.some((p:Record<string,unknown>)=>typeof p.text!=="string" || p.functionCall))return fallback("invalid_output");
-    const raw=parts.map((p:{text:string})=>p.text).join("");
+    const raw=parts.map(p=>p.text as string).join("");
     if(raw.length>300)return fallback("invalid_output");
     const parsed=z.object({phraseId:z.string()}).strict().safeParse(JSON.parse(raw));
     if(!parsed.success || !Object.hasOwn(allowedPhrases,parsed.data.phraseId))return fallback("invalid_output");

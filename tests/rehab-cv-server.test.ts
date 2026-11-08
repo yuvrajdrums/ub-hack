@@ -14,7 +14,7 @@ async function setup(t:test.TestContext,fetcher?:typeof fetch) {
   t.after(()=>rm(dir,{recursive:true,force:true}));
   const service=cvService(path.join(dir,"cv.json"),{now:()=>new Date(clock),fetcher});
   const session=await service.start("actor",{requestId:randomUUID(),exerciseId:"seated-knee-extension",side:"left",startedAtUtc:clock,evidence:"simulated"});
-  return {service,session};
+  return {service,session,file:path.join(dir,"cv.json")};
 }
 function event(sequence:number,changes:Partial<CvEventCandidate>={}):CvEventCandidate {
   return {eventId:randomUUID(),sequence,observedOffsetMs:sequence*10000,type:"attempt_finalized",attemptId:randomUUID(),movementComplete:true,qualifying:true,holdMs:5000,targetReached:true,rangeDegrees:75,...changes} as CvEventCandidate;
@@ -96,6 +96,25 @@ test("Malformed provider wording cannot enter final text and provider failure fa
     const final=await service.generate("actor",session.id,admitted.feedback[0].eventId,{requestId:randomUUID()});
     assert.equal(final.textSource,"deterministic_fallback");assert.ok(final.fallbackReason);assert.ok(!final.text.includes("pain"));
   }
+});
+
+test("Independent service instances share a persisted Gemini lease and return one final revision",async t=>{
+  controlled(t);let calls=0;let release!:(value:Response)=>void;let entered!:()=>void;
+  const started=new Promise<void>(resolve=>{entered=resolve;});
+  const provider=new Promise<Response>(resolve=>{release=resolve;});
+  const fetcher=(async()=>{calls++;entered();return provider;}) as typeof fetch;
+  const {service,session,file}=await setup(t,fetcher);
+  const other=cvService(file,{now:()=>new Date(clock),fetcher});
+  const admitted=await service.events("actor",session.id,{requestId:randomUUID(),event:event(1,{holdMs:3100,qualifying:false})});
+  const eventId=admitted.feedback[0].eventId;
+  const first=service.generate("actor",session.id,eventId,{requestId:randomUUID()});
+  await started;
+  const duplicate=other.generate("actor",session.id,eventId,{requestId:randomUUID()});
+  release(Response.json({candidates:[{finishReason:"STOP",content:{parts:[{text:'{"phraseId":"gentle"}'}]}}]}));
+  const [a,b]=await Promise.all([first,duplicate]);
+  assert.equal(calls,1);assert.deepEqual(a,b);
+  assert.equal(a.textSource,"gemini_selected_approved_variant");
+  assert.equal(a.textRevision,2);
 });
 test("Generation does not hold measurement lock and stale results are not applied",async t=>{
   controlled(t);let release!:(value:Response)=>void;let called!:()=>void;

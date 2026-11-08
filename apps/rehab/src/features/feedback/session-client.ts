@@ -9,7 +9,7 @@ export const emptyTiming = (): CvTiming => ({ elapsedTimeMs:0,activeTimeMs:0,pau
 
 export async function cvApi<T>(path:string,body?:unknown,csrf?:string):Promise<T> {
   const r=await fetch(BASE+path,{method:body===undefined?"GET":"POST",credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...(csrf?{"x-cv-csrf":csrf}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(12000)});
-  const value=await r.json();
+  const value=await r.json() as {ok:boolean;data?:T;error?:{message?:string}};
   if(!r.ok||!value.ok)throw new Error(value.error?.message??"The request could not be completed.");
   return value.data as T;
 }

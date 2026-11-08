@@ -95,3 +95,5 @@ If the Classroom repo already contains starter files, clone it, copy this source
 Branches: `ranveer/voice`, `asmita/care`, `yuvraj/vision`. Merge contracts/scaffold first, then small working function slices. Root lock/config edits are serialized through Ranveer; Asmita maintains shared design tokens; Yuvraj maintains model assets. See `docs/OWNERSHIP.md` for all boundaries and deferred work.
 
 Read your guide: `docs/RANVEER.md`, `docs/ASMITA.md`, `docs/YUVRAJ.md`. Product diagram: `docs/PANDA_PRODUCT_DIAGRAM.svg`. Exact API contract: `docs/SHARED_CONTRACT.md`. Build order and demo: `docs/BUILD_ORDER.md` and `docs/DEMO_SCRIPT.md`. Track guidance: `docs/TRACK_STRATEGY.md`.
+
+Private phone testing and deployment: see [PHONE_HOSTING.md](docs/PHONE_HOSTING.md).

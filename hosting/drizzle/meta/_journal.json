@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1794110328750,
+      "tag": "0000_quick_wolf_cub",
+      "breakpoints": true
+    }
+  ]
+}

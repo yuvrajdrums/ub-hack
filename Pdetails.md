@@ -19,3 +19,11 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current work is on branch `
 - Verified: 48 unit/domain tests, six browser scenarios, all three production builds, 16 production gateway integration checks and all three standalone starts. Real Gemini wording succeeded on synthetic evidence using the existing local environment credential. No credential appeared in browser assets.
 - Browser tests exercise the real bundled pose model on a virtual camera; movement traces are explicitly simulated. Physical laptop/phone exercise observations remain manual validation, and no clinical accuracy is claimed.
 - Key local setting is configured in ignored root `.env.local`; never print or commit it. Existing v2 APIs stay separate from CV report storage. Ranveer TTS/playback and Care acknowledgement remain later integrations.
+
+## Private phone hosting
+
+- GitHub fork: https://github.com/yuvrajdrums/ub-hack (`main` and `yuvraj/camera-to-text`).
+- Deployment profile: `hosting/`; hydrate a separate source checkout with `node scripts/prepare-phone-host.mjs`. See `docs/PHONE_HOSTING.md`.
+- D1 replaces local report files; Sites supplies owner-private ChatGPT identity. Generation uses persisted leases across requests. 49 tests, hosted-runtime HTTP checks, real Gemini and virtual-camera model startup passed.
+
+- Live owner-private phone URL: https://panda-care-rehab-yuvraj-20261107.yuvrajmu160398.chatgpt.site/rehab (ChatGPT sign-in required).

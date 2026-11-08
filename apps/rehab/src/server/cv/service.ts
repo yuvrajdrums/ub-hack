@@ -17,7 +17,13 @@ type StoredSession = CvSession & {
   lastCodeMs:Partial<Record<CvFeedbackCode,number>>;
   generationStarts:Record<string,string>;
 };
-type Store = {sessions:StoredSession[];receipts:Record<string,Receipt>};
+export type CvStoreData = {sessions:StoredSession[];receipts:Record<string,Receipt>};
+type Store = CvStoreData;
+export interface CvStore {
+  snapshot():Promise<CvStoreData>;
+  // Callbacks must be side-effect free: durable adapters may retry on contention.
+  update<R>(fn:(state:CvStoreData)=>R|Promise<R>):Promise<R>;
+}
 const feature={featureVersion:CV_FEATURE_VERSION};
 const publicSession=(s:StoredSession):CvSession=>({
   ...feature,id:s.id,exerciseId:s.exerciseId,side:s.side,evidence:s.evidence,configuration:s.configuration,
@@ -50,11 +56,10 @@ function feedback(s:StoredSession,code:CvFeedbackCode,now:Date,attemptId:string|
   };
   s.feedback.push(f);change(s,f);return structuredClone(f);
 }
-export function cvService(file=dataFile("rehab-cv"),options:{now?:()=>Date;fetcher?:typeof fetch}={}) {
-  const db=new JsonStore<Store>(file,()=>({sessions:[],receipts:{}}));
+export function cvService(file=dataFile("rehab-cv"),options:{now?:()=>Date;fetcher?:typeof fetch;store?:CvStore}={}) {
+  const db=options.store || new JsonStore<Store>(file,()=>({sessions:[],receipts:{}}));
   const now=options.now || (()=>new Date());
   const inFlight=new Map<string,Promise<CvFeedbackText>>();
-  const sessionInFlight=new Set<string>();
   return {
     async start(owner:string,raw:unknown):Promise<CvSession> {
       const v=CvStartSchema.parse(raw);
@@ -159,22 +164,36 @@ export function cvService(file=dataFile("rehab-cv"),options:{now?:()=>Date;fetch
         const prepared=await db.update(store=>{
           const s=owned(store,id,owner),f=s.feedback.find(f=>f.eventId===eventId);
           if(!f)throw new DomainError("NOT_FOUND","Feedback event not found",404);
-          if(f.generationStatus==="complete")return {done:structuredClone(f),variants:{} as Record<string,string>,code:f.feedbackCode};
+          if(f.generationStatus==="complete")return {done:structuredClone(f),wait:false,variants:{} as Record<string,string>,code:f.feedbackCode};
+          // The persisted lease coordinates different Worker requests/isolates.
+          if(s.generationStarts[eventId] && Date.parse(s.generationStarts[eventId])+6000>now().getTime())
+            return {done:null,wait:true,variants:{} as Record<string,string>,code:f.feedbackCode};
           let reason:string|null=null;
           if((s.status!=="running" && f.feedbackCode!=="SET_COMPLETED") || f.sessionControlRevision!==s.sessionControlRevision)reason="inactive_session";
           else if(f.expiresAtUtc && Date.parse(f.expiresAtUtc)<=now().getTime())reason="expired";
-          else if(sessionInFlight.has(id))reason="generation_busy";
+          else if(s.feedback.some(other=>other.eventId!==eventId && other.generationStatus==="pending" && s.generationStarts[other.eventId] && Date.parse(s.generationStarts[other.eventId])+6000>now().getTime()))reason="generation_busy";
           else if(Object.keys(s.generationStarts).length>=30)reason="session_quota";
           else if(s.generationStarts[eventId])reason="interrupted_generation";
-          if(reason) {f.generationStatus="complete";f.fallbackReason=reason;f.textRevision++;change(s,f);return {done:structuredClone(f),variants:{} as Record<string,string>,code:f.feedbackCode};}
-          s.generationStarts[eventId]=now().toISOString();sessionInFlight.add(id);
-          return {done:null,variants:phraseVariants(f.feedbackCode,s.configuration,s.completedReps),code:f.feedbackCode};
+          if(reason) {f.generationStatus="complete";f.fallbackReason=reason;f.textRevision++;change(s,f);return {done:structuredClone(f),wait:false,variants:{} as Record<string,string>,code:f.feedbackCode};}
+          s.generationStarts[eventId]=now().toISOString();
+          return {done:null,wait:false,variants:phraseVariants(f.feedbackCode,s.configuration,s.completedReps),code:f.feedbackCode};
         });
         let answer=prepared.done;
+        if(prepared.wait) {
+          const deadline=Date.now()+6500;
+          while(Date.now()<deadline) {
+            const f=owned(await db.snapshot(),id,owner).feedback.find(f=>f.eventId===eventId)!;
+            if(f.generationStatus==="complete") {answer=structuredClone(f);break;}
+            await new Promise(resolve=>setTimeout(resolve,100));
+          }
+          if(!answer)answer=await db.update(store=>{
+            const s=owned(store,id,owner),f=s.feedback.find(f=>f.eventId===eventId)!;
+            if(f.generationStatus!=="complete") {f.generationStatus="complete";f.fallbackReason="interrupted_generation";f.textRevision++;change(s,f);}
+            return structuredClone(f);
+          });
+        }
         if(!answer) {
-          let generation;
-          try {generation=await selectPhrase(prepared.code,prepared.variants,options.fetcher);}
-          finally {sessionInFlight.delete(id);}
+          const generation=await selectPhrase(prepared.code,prepared.variants,options.fetcher);
           answer=await db.update(store=>{
             const s=owned(store,id,owner),f=s.feedback.find(f=>f.eventId===eventId)!;
             if(f.generationStatus==="complete")return structuredClone(f);
