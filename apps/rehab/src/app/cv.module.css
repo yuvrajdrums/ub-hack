@@ -82,6 +82,9 @@
 .trace p { color:var(--muted); font-size:12px; margin:12px 0; }
 .trace button { font-size:12px; }
 .footnote { margin:22px 0 0; color:var(--muted); font-size:11px; }
+.countingGuide { padding:14px 20px; background:#f0f5ec; border-top:1px solid var(--line); font-size:13px; line-height:1.6; }
+.countingGuide strong { color:#254e3c; font-weight:600; }
+.countingGuide p { margin:5px 0 0; color:var(--muted); font-size:12px; }
 @media(max-width:900px) { .layout { grid-template-columns:minmax(0,1fr); } .sideStack { grid-template-columns:1fr 1fr; } .historyGrid { grid-template-columns:1fr 1fr; } .intro { grid-template-columns:1fr; gap:16px; } .scope { justify-self:start; } }
 @media(max-width:600px) { .sideStack,.historyGrid { grid-template-columns:1fr; } .intro h1 { font-size:37px; } .stage { aspect-ratio:4/3; } .metric strong { font-size:24px; } .metric { padding:16px 5px; } .metric span { font-size:9px; } .cameraActions small { margin:0; flex-basis:100%; } .feedback { padding:20px; } .feedbackTop { align-items:start; } }
 @media(prefers-reduced-motion:reduce) { .progress span { transition:none; } }

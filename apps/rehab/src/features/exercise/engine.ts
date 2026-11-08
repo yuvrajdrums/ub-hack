@@ -125,6 +125,9 @@ export function advanceExercise(previous: ExerciseState, observation: ExerciseOb
   const direction = Math.sign(midpoint(config.targetRangeDeg) - midpoint(config.startRangeDeg));
   const atStart = inRange(angleDeg, config.startRangeDeg);
   const atTarget = inRange(angleDeg, config.targetRangeDeg);
+  // Enter on the configured target, release only beyond its hysteresis band.
+  // Small measurement noise must not prematurely terminate a continuous hold.
+  const insideTargetRelease = inRange(angleDeg,[config.targetRangeDeg[0]-hysteresis,config.targetRangeDeg[1]+hysteresis]);
   // Dwell belongs to one region; a direct jump cannot inherit the other region's time.
   const previouslyAtStart = previous.trackingAvailable && previous.lastAngleDeg !== null && inRange(previous.lastAngleDeg, config.startRangeDeg);
   const previouslyAtTarget = previous.trackingAvailable && previous.lastAngleDeg !== null && inRange(previous.lastAngleDeg, config.targetRangeDeg);
@@ -178,7 +181,7 @@ export function advanceExercise(previous: ExerciseState, observation: ExerciseOb
       }
     } else state.conditionSinceMs = null;
   } else if (state.phase === "holding") {
-    if (atTarget) {
+    if (insideTargetRelease) {
       state.activeAttempt!.holdMs += dt;
       state.currentHoldMs = state.activeAttempt!.holdMs;
     } else {

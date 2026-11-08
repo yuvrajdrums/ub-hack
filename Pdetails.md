@@ -16,7 +16,7 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current work is on branch `
 
 - Camera/model loading, live overlay, stable calibration, four exercise protocols, immediate/validated text, server-side Gemini, ordered event recovery, Finish barrier and immutable report/history are implemented. Standalone navigation stays inside Rehab.
 - Commands: `npm run dev:yuvraj`, `npm run cv:assets`, `npm run test:cv`, `npm run test:browser`, `npm run test:cv:http`. Runbook: `docs/YUVRAJ_CAMERA_TO_TEXT.md`.
-- Verified: 48 unit/domain tests, six browser scenarios, all three production builds, 16 production gateway integration checks and all three standalone starts. Real Gemini wording succeeded on synthetic evidence using the existing local environment credential. No credential appeared in browser assets.
+- Verified: 68 unit/domain tests, seven browser scenarios, all three production builds, 16 production gateway integration checks and all three standalone starts. Real Gemini wording succeeded on synthetic evidence using the existing local environment credential. No credential appeared in browser assets.
 - Browser tests exercise the real bundled pose model on a virtual camera; movement traces are explicitly simulated. Physical laptop/phone exercise observations remain manual validation, and no clinical accuracy is claimed.
 - Key local setting is configured in ignored root `.env.local`; never print or commit it. Existing v2 APIs stay separate from CV report storage. Ranveer TTS/playback and Care acknowledgement remain later integrations.
 
@@ -27,3 +27,9 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current work is on branch `
 - D1 replaces local report files; Sites supplies owner-private ChatGPT identity. Generation uses persisted leases across requests. 49 tests, hosted-runtime HTTP checks, real Gemini and virtual-camera model startup passed.
 
 - Live owner-private phone URL: https://panda-care-rehab-yuvraj-20261107.yuvrajmu160398.chatgpt.site/rehab (ChatGPT sign-in required).
+
+## Live counter and tracking profiles
+
+- Reproduced zero-count failures at 300–500 ms valid cadence and from excessive filter lag. Live policy is centralized in features/exercise/live.ts: 750 ms gaps, arrival freshness, EMA 0.65/window 1, target-release hysteresis. Seated extension accepts reaching or exceeding the comfortable target up to geometric 180°.
+- Exercise/side profiles in features/camera/tracking-profile.ts drive required joints, overlay, continuity and model options. Seated exercises use selected hip/knee/ankle only; SLR adds selected shoulder; guided quads needs no pose. Changing the selection stops and recalibrates the camera.
+- UI gives phase-specific counting guidance and explicit gate failures. Regression traces are synthetic; do not claim physical-device validation.

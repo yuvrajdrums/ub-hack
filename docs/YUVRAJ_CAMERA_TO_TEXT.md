@@ -38,6 +38,18 @@ This build verified `gemini-3.5-flash-lite` using the user's existing environmen
 
 Static quads uses Start guided hold → Confirm this hold and `patient_reported` evidence. The camera never verifies muscle contraction. Combined seated flexion/extension requires its second hold. SLR estimates torso-relative elevation and knee straightness, not lift inches.
 
+## Exercise-specific live tracking
+
+The live detector profile is selected by exercise and anatomical working side. Seated knee extension and seated flexion/extension require only the working hip, knee and ankle; their overlay and continuity checks use that leg, without requiring shoulders, face, arms or the opposite leg. Straight-leg raise additionally requires the working-side shoulder for its torso-relative elevation reference. Guided static quads does not run pose inference to verify a contraction. Changing exercise or side stops the camera and clears calibration before the next profile starts.
+
+MediaPipe itself still estimates 33 full-body landmarks. Its supported options do not include disabling selected body joints; the application selects the relevant measurements and overlay. Confidence thresholds, two-pose ambiguity detection and disabled segmentation masks are centralized in the profile. This does not guarantee that the underlying person detector will work with every tightly cropped leg-only image.
+
+The current live policy uses a **750 ms maximum valid-sample gap**, an EMA factor of **0.65**, a one-sample median window and the existing **200 ms phase dwell**. Calibration, smoothing, counting and the arrival watchdog share that policy. Freshness is measured from frame delivery after inference; observation order uses capture time. Invalid required landmarks still reset immediately, and gaps above 750 ms cannot complete an unseen hold. The strict 250 ms legacy fixture default remains separately testable.
+
+A seated target is a captured comfortable minimum: its accepted extension interval starts six degrees below that reference and ends at the geometric maximum of 180 degrees. Returning to the start interval still completes the movement. A three-degree release hysteresis prevents small target-angle noise from splitting an otherwise continuous hold. The faster live filter avoids hiding a normal return to start. Full movements and repetitions meeting the five-second hold remain separate counts.
+
+The counting guide now shows the exact phase instruction, start/target intervals and selected leg, and explains delayed frames or missing required joints. It also distinguishes a counted movement with a short hold from a movement that met the hold target. Physical phone performance remains a manual test; automated regressions use explicitly synthetic observations.
+
 ## Reproducible example and recovery
 
 Open “Try a clearly labeled example trace” and run sample movements. It feeds two deterministic cycles into the same engine: one short hold and one qualifying hold. Save the report and verify `simulated` evidence. It is not a replacement for observing physical-camera performance.

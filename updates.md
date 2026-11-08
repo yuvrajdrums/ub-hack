@@ -57,3 +57,31 @@
 - 2026-11-07 23:08:15 -05:00 — Two-minute recovery checkpoint 20261108T040815Z: 171 changed/new files snapshotted; HEAD b57056a.
 
 - 2026-11-07 23:08:55 -05:00 — Published owner-private Panda Care Rehab on HTTPS with production Gemini secrets and D1 storage; source 1feca527346387a5188d1e5f4fe473c7d38cb624, deployment succeeded. All 49 tests and three app builds passed.
+
+- 2026-11-07 23:14:03 -05:00 — Two-minute recovery checkpoint 20261108T041403Z: 172 changed/new files snapshotted; HEAD a6065d7.
+
+- 2026-11-07 23:16:03 -05:00 — Two-minute recovery checkpoint 20261108T041603Z: 172 changed/new files snapshotted; HEAD a6065d7.
+
+- 2026-11-07 23:18:04 -05:00 — Two-minute recovery checkpoint 20261108T041804Z: 173 changed/new files snapshotted; HEAD a6065d7.
+
+- 2026-11-07 23:20:04 -05:00 — Two-minute recovery checkpoint 20261108T042004Z: 174 changed/new files snapshotted; HEAD a6065d7.
+
+- 2026-11-07 23:22:04 -05:00 — Two-minute recovery checkpoint 20261108T042204Z: 174 changed/new files snapshotted; HEAD a6065d7.
+
+- 2026-11-07 23:23:18 -05:00 — Fixed live counter cadence, delivery freshness, filter lag, seated target acceptance and hold hysteresis; added phase guidance and exercise/side-specific tracking profiles, overlay and continuity checks. Added targeted regressions and updated runbook/project details.
+
+- 2026-11-07 23:24:05 -05:00 — Two-minute recovery checkpoint 20261108T042405Z: 176 changed/new files snapshotted; HEAD a6065d7.
+
+- 2026-11-07 23:24:56 -05:00 — Added and wired exercise-specific required joints, per-side overlays, selected-leg continuity checks and profile model options; all 68 unit/domain tests pass, including 19 new live-counting/profile regressions.
+
+- 2026-11-07 23:26:05 -05:00 — Two-minute recovery checkpoint 20261108T042605Z: 176 changed/new files snapshotted; HEAD a6065d7.
+
+- 2026-11-07 23:28:05 -05:00 — Two-minute recovery checkpoint 20261108T042805Z: 176 changed/new files snapshotted; HEAD a6065d7.
+
+- 2026-11-07 23:28:58 -05:00 — Verified all six existing browser scenarios plus the new exercise/side camera-reset scenario. Preserved concurrently added model-selector work outside this release.
+
+- 2026-11-07 23:30:06 -05:00 — Two-minute recovery checkpoint 20261108T043006Z: 178 changed/new files snapshotted; HEAD a6065d7.
+
+- 2026-11-07 23:30:29 -05:00 — Side-chat change: added Lite/Full/Heavy pose-model selection with on-demand versioned Google downloads, camera stop/recalibration on model changes, and an opt-in three-model browser check. All 3 real-model startup/switch tests and Rehab type checking passed; no commit, push, source sync or deployment performed here.
+
+- 2026-11-07 23:31:59 -0500 — Released the reviewed rep-counter and exercise-profile snapshot independently of concurrent model-selector edits; 68 domain tests, seven browser scenarios and production builds verified.

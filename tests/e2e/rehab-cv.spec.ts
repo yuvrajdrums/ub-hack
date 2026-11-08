@@ -87,3 +87,20 @@ test("actual pinned pose model runs on a virtual camera and stops cleanly",async
   await expect(page.getByText("Camera off",{exact:true})).toBeVisible();
   expect(await page.locator("video").evaluate((video:HTMLVideoElement)=>video.srcObject)).toBeNull();
 });
+
+test("exercise and working-leg changes stop the old camera profile before new calibration",async({page,context})=>{
+  await context.grantPermissions(["camera"]);await page.goto("/rehab");
+  await expect(page.getByText(/Your upper body and opposite leg are not required/).first()).toBeVisible();
+  await page.getByRole("button",{name:"Enable camera",exact:true}).click();
+  await expect(page.getByText(/GPU ·|CPU ·/)).toBeVisible({timeout:45000});
+  await page.getByRole("combobox",{name:"Exercise",exact:true}).selectOption("straight-leg-raise");
+  await expect(page.getByText("Camera off",{exact:true})).toBeVisible();
+  expect(await page.locator("video").evaluate((video:HTMLVideoElement)=>video.srcObject)).toBeNull();
+  await expect(page.getByText(/includes your left shoulder, hip, knee and ankle/).first()).toBeVisible();
+  await page.getByRole("combobox",{name:"Working leg",exact:true}).selectOption("right");
+  await expect(page.getByText(/includes your right shoulder, hip, knee and ankle/).first()).toBeVisible();
+  await expect(page.getByRole("button",{name:"Start set",exact:true})).toBeDisabled();
+  await page.getByRole("combobox",{name:"Exercise",exact:true}).selectOption("static-quads");
+  await expect(page.getByRole("button",{name:"Enable camera",exact:true})).toBeDisabled();
+  await expect(page.getByRole("button",{name:"Start set",exact:true})).toBeEnabled();
+});
