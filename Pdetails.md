@@ -45,6 +45,7 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current work is on branch `
 - Public Worker URL: https://panda-care-rehab-demo.yuvrajmunjal1.workers.dev/rehab
 - Deployed to Cloudflare Workers with D1 storage and Worker secrets for Gemini and visitor signing. The public /rehab page, CV context endpoint and empty session report endpoint returned 200; Gemini reports configured, four exercise configs loaded and Lite/Full/Heavy selector is present.
 - Verified two independent HTTPS browser sessions each received a different signed Secure visitor cookie and an isolated empty report list. The camera pipeline remains client-side; actual phone movement, rep counting and live Gemini wording still need hands-on validation from Yuvraj's phone.
+- Redeployed the current built release on 2026-11-08; Worker version `b8cc5d6e-df74-489d-99ce-2dad9158a14d`. Post-deploy `/rehab` and CV context checks returned 200, and Gemini remains configured.
 
 ## Camera continuity behavior
 
