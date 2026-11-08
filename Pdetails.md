@@ -39,7 +39,7 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current release work is on 
 ## Cloudflare public demo deployment
 
 - Current release branch: `yuvraj/cloudflare-public-demo`, based on the model-selector-only branch. Cloudflare Workers serves the full app and API; D1 stores demo reports. The public Worker middleware assigns each browser a signed, HTTP-only visitor identity so D1 records remain isolated by visitor.
-- Source branch `yuvraj/cloudflare-public-demo` is pushed to https://github.com/yuvrajdrums/ub-hack; wider approach-band commit `bf0d263` is included.
+- Source branch `yuvraj/cloudflare-public-demo` is pushed to https://github.com/yuvrajdrums/ub-hack; -15° / +30° target-band commit `78ac68f` is included.
 - `PANDA_CF_PUBLIC_DEMO=true` enables public identity translation in `hosting/worker/index.ts`. It overwrites browser-supplied OpenAI identity headers and uses a 30-day signed visitor cookie; `REHAB_CV_AUTH_SECRET` must be a Worker secret. `nodejs_compat_populate_process_env` exposes configured runtime secrets to the existing server handlers.
 - The public page says not to enter personal details; camera frames stay on the device. Gemini/auth credentials are stored as Cloudflare Worker secrets, not in config or source. The dedicated D1 database and migration are deployed.
 - Public Worker URL: https://panda-care-rehab-demo.yuvrajmunjal1.workers.dev/rehab
@@ -53,7 +53,7 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current release work is on 
 - Camera-tracked holds now show `0.2s` on the first target-range frame and label the 200 ms validation window “Stabilizing target”; the exercise engine still validates the full dwell before confirming the hold.
 - Target calibration is now asymmetrical: accept 15° short of target on approach and up to 30° past target, clamped to 0°–180° and capped to keep at least 3° separation from the start range. Example start 90° / target 170° accepts 155°–180°.
 - The metric row now shows the current phase's target hold, since the live duration is displayed over the preview.
-- Typecheck and production builds for Panda, Rehab, and Voice passed. The -15° / +30° target band is built and awaiting deployment.
+- Typecheck and production builds for Panda, Rehab, and Voice passed. Deployed the -15° / +30° target band to Cloudflare Worker version `8a657423-e4d6-4ea8-94ad-588db12b3a96`; `/rehab` and CV context returned 200.
 
 ## Camera continuity behavior
 

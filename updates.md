@@ -78,3 +78,4 @@
 - 2026-11-08 01:27:53 -05:00 — Widened the camera target band from ±6° to a 20° approach tolerance toward the captured target, retaining ±6° beyond target and a 3° minimum gap from the start range. Typecheck and three app builds passed.
 - 2026-11-08 01:29:03 -05:00 — Deployed the wider comfortable-target hold band to Cloudflare Worker version `124ad3e9-c103-4809-b06b-d451ef6df0d3`; `/rehab` and CV context checks returned 200.
 - 2026-11-08 01:37:11 -05:00 — Changed the target band to 15° short of target and 30° past it, clamped to the 0°–180° measurement range and kept separate from the start band. For 90°→170°, the range is 155°–180°; typecheck and all three production builds passed.
+- 2026-11-08 01:38:14 -05:00 — Deployed the requested -15° / +30° target band to Cloudflare Worker version `8a657423-e4d6-4ea8-94ad-588db12b3a96`; Rehab page and CV context returned 200.
