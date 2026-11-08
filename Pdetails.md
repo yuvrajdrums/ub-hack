@@ -39,7 +39,7 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current release work is on 
 ## Cloudflare public demo deployment
 
 - Current release branch: `yuvraj/cloudflare-public-demo`, based on the model-selector-only branch. Cloudflare Workers serves the full app and API; D1 stores demo reports. The public Worker middleware assigns each browser a signed, HTTP-only visitor identity so D1 records remain isolated by visitor.
-- Source commit `c5e0114` is pushed to the fork branch `yuvraj/cloudflare-public-demo` on https://github.com/yuvrajdrums/ub-hack.
+- Source branch `yuvraj/cloudflare-public-demo` is pushed to https://github.com/yuvrajdrums/ub-hack; live hold overlay commit `c00082b` is included.
 - `PANDA_CF_PUBLIC_DEMO=true` enables public identity translation in `hosting/worker/index.ts`. It overwrites browser-supplied OpenAI identity headers and uses a 30-day signed visitor cookie; `REHAB_CV_AUTH_SECRET` must be a Worker secret. `nodejs_compat_populate_process_env` exposes configured runtime secrets to the existing server handlers.
 - The public page says not to enter personal details; camera frames stay on the device. Gemini/auth credentials are stored as Cloudflare Worker secrets, not in config or source. The dedicated D1 database and migration are deployed.
 - Public Worker URL: https://panda-care-rehab-demo.yuvrajmunjal1.workers.dev/rehab
@@ -51,7 +51,7 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current release work is on 
 
 - Added a compact, half-preview-width timer overlay inside the camera stage. It displays the active measured hold, target duration, exercise phase, and progress. Static quad guided holds use the patient-controlled timer; paused or confirmed duration remains visible.
 - The metric row now shows the current phase's target hold, since the live duration is displayed over the preview.
-- Typecheck and production builds for Panda, Rehab, and Voice passed. Publishing to Cloudflare is the remaining step for this UI change.
+- Typecheck and production builds for Panda, Rehab, and Voice passed. Deployed to Cloudflare Worker version `2534683d-f4c4-4d71-a653-9302f7bbd56a`; `/rehab` and CV context returned 200, and the deployed bundle contains the live/guided timer UI and CSS.
 
 ## Camera continuity behavior
 
