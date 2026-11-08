@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CvChanges, CvContext, CvExerciseConfig, CvExerciseId, CvFeedbackText, CvFinishInput, CvReport, CvSession, CvTiming } from "../../../../packages/contracts/rehab-cv";
 import { usePoseCamera, type CameraFrame } from "@/features/camera/use-pose-camera";
 import { POSE_MODELS, poseModelFor, type PoseModelId } from "@/features/camera/pose-models";
-import { advanceExercise, advanceTiming, completeGuidedHold, createAngleFilter, createExerciseState, createTimingState, defaultEngineConfig, deriveCalibration, evaluateCalibration, filterAngle, invalidateExercise, measurePose, timingSummary, type AttemptOutcome, type CalibrationSample, type EngineConfig, type ExerciseState, type TimingState } from "@/features/exercise";
+import { advanceExercise, advanceTiming, completeGuidedHold, createAngleFilter, createExerciseState, createTimingState, defaultEngineConfig, deriveCalibration, evaluateCalibration, filterAngle, invalidateExercise, measurePose, timingSummary, DETECTOR_DEFAULTS, type AttemptOutcome, type CalibrationSample, type EngineConfig, type ExerciseState, type TimingState } from "@/features/exercise";
 import { cvApi, readRecovery, SessionTransport, type MeasurementBody, type Recovery } from "@/features/feedback/session-client";
 import styles from "./cv.module.css";
 
@@ -235,10 +235,14 @@ export default function Rehab() {
   const calibrated=calibration.start!==null&&calibration.target!==null&&!!deriveCalibration(calibration.start,calibration.target);
   const running=!!session;
   const now=performance.now();
-  const holdDisplay=staticQuads?(run.current?.guidedHoldMs??0)+(run.current?.guidedAt===null||run.current?.guidedAt===undefined?0:Math.max(0,now-run.current.guidedAt)):engine.currentHoldMs;
+  const currentRun=run.current;
+  const targetRange=currentRun?.config.targetRangeDeg;
+  const holdCandidateActive=!staticQuads&&engine.phase==="outbound"&&!!currentRun&&engine.activeAttempt!==null&&engine.conditionSinceMs!==null&&engine.lastAngleDeg!==null&&!!targetRange&&engine.lastAngleDeg>=targetRange[0]&&engine.lastAngleDeg<=targetRange[1];
+  const candidateElapsedMs=currentRun&&engine.conditionSinceMs!==null?Math.max(0,now-currentRun.start-engine.conditionSinceMs):0;
+  const holdDisplay=staticQuads?(currentRun?.guidedHoldMs??0)+(currentRun?.guidedAt===null||currentRun?.guidedAt===undefined?0:Math.max(0,now-currentRun.guidedAt)):holdCandidateActive?Math.max(currentRun?.config.minimumDwellMs??DETECTOR_DEFAULTS.minimumDwellMs,candidateElapsedMs):engine.currentHoldMs;
   const holdTargetMs=staticQuads?(run.current?.config.holdMs??configuration?.targetHoldMs??0):engine.phase==="return_hold"?(configuration?.flexionHoldMs||configuration?.targetHoldMs||0):(configuration?.targetHoldMs??0);
   const holdProgress=holdTargetMs>0?Math.min(100,holdDisplay/holdTargetMs*100):0;
-  const holdStatus=!running?"Waiting for set":paused?"Paused":staticQuads?(guided?"Guided hold in progress":holdDisplay>0?"Last guided hold":"Start guided hold"):engine.phase==="holding"?"Holding target position":engine.phase==="return_hold"?"Holding start position":"Waiting for hold position";
+  const holdStatus=!running?"Waiting for set":paused?"Paused":staticQuads?(guided?"Guided hold in progress":holdDisplay>0?"Last guided hold":"Start guided hold"):holdCandidateActive?"Stabilizing target":engine.phase==="holding"?"Holding target position":engine.phase==="return_hold"?"Holding start position":"Waiting for hold position";
   return <div className={styles.workspace}>
     <div className={styles.intro}><div><div className={styles.eyebrow}>Yuvraj / Camera to text</div><h1>Every movement.<br/>A little more clarity.</h1><p>Track your demonstration, see what was measured, and get clear text feedback as you move. Public demo: camera frames stay on your device; do not enter personal details.</p></div><span className={styles.scope}>Public exercise demo</span></div>
     <p className={`${styles.status} ${error?styles.error:""}`} role="status">{error||notice}</p>

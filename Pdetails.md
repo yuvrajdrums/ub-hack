@@ -50,8 +50,9 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current release work is on 
 ## Live hold duration overlay
 
 - Added a compact, half-preview-width timer overlay inside the camera stage. It displays the active measured hold, target duration, exercise phase, and progress. Static quad guided holds use the patient-controlled timer; paused or confirmed duration remains visible.
+- Camera-tracked holds now show `0.2s` on the first target-range frame and label the 200 ms validation window “Stabilizing target”; the exercise engine still validates the full dwell before confirming the hold.
 - The metric row now shows the current phase's target hold, since the live duration is displayed over the preview.
-- Typecheck and production builds for Panda, Rehab, and Voice passed. Deployed to Cloudflare Worker version `2534683d-f4c4-4d71-a653-9302f7bbd56a`; `/rehab` and CV context returned 200, and the deployed bundle contains the live/guided timer UI and CSS.
+- Typecheck and production builds for Panda, Rehab, and Voice passed. Deployed to Cloudflare Worker version `2534683d-f4c4-4d71-a653-9302f7bbd56a`; `/rehab` and CV context returned 200, and the deployed bundle contains the live/guided timer UI and CSS. The 0.2s candidate-display adjustment is built and pending deployment.
 
 ## Camera continuity behavior
 
