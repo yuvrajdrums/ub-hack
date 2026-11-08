@@ -62,3 +62,7 @@
 
 - 2026-11-07 23:58:37 -05:00 — Two-minute model-only checkpoint 20261108T045837Z: 6 files snapshotted; HEAD a6065d7.
 - 2026-11-07 23:59:43 -05:00 — Reapplied Lite/Full/Heavy selection on the restored a6065d7 baseline only. Rehab build/typecheck passed and all three real models started and switched cleanly on a virtual camera; counter/profile changes are excluded.
+
+- 2026-11-08 00:00:37 -05:00 — Two-minute model-only checkpoint 20261108T050037Z: 7 files snapshotted; HEAD fddd30c.
+
+- 2026-11-08 00:01:36 -05:00 — Pushed commit fddd30c to fork branch yuvraj/pose-model-selector. Native Sites publishing is unavailable in this session, so the private phone Site remains on the restored version 1 while the model-only release awaits deployment.
