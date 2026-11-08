@@ -57,3 +57,8 @@
 - 2026-11-07 23:08:15 -05:00 — Two-minute recovery checkpoint 20261108T040815Z: 171 changed/new files snapshotted; HEAD b57056a.
 
 - 2026-11-07 23:08:55 -05:00 — Published owner-private Panda Care Rehab on HTTPS with production Gemini secrets and D1 storage; source 1feca527346387a5188d1e5f4fe473c7d38cb624, deployment succeeded. All 49 tests and three app builds passed.
+
+- 2026-11-07 23:56:36 -05:00 — Two-minute model-only checkpoint 20261108T045636Z: 5 files snapshotted; HEAD a6065d7.
+
+- 2026-11-07 23:58:37 -05:00 — Two-minute model-only checkpoint 20261108T045837Z: 6 files snapshotted; HEAD a6065d7.
+- 2026-11-07 23:59:43 -05:00 — Reapplied Lite/Full/Heavy selection on the restored a6065d7 baseline only. Rehab build/typecheck passed and all three real models started and switched cleanly on a virtual camera; counter/profile changes are excluded.

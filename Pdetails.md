@@ -27,3 +27,11 @@ Build Yuvraj's standalone Rehab camera-to-text demo. Current work is on branch `
 - D1 replaces local report files; Sites supplies owner-private ChatGPT identity. Generation uses persisted leases across requests. 49 tests, hosted-runtime HTTP checks, real Gemini and virtual-camera model startup passed.
 
 - Live owner-private phone URL: https://panda-care-rehab-yuvraj-20261107.yuvrajmu160398.chatgpt.site/rehab (ChatGPT sign-in required).
+
+## Current model-selector revision
+
+- This isolated change starts from baseline `a6065d749a0d763caa70d462745db166f96e344e`, the same version 1 code restored on the private phone Site. It does not include the counter/tracking-profile rewrite.
+- Rehab setup selects Lite (default), Full or Heavy through `apps/rehab/src/features/camera/pose-models.ts`. Lite is bundled; Full/Heavy load versioned Google model files on camera start. Model choice only changes pose weights: exercise geometry, landmark thresholds, frame cadence and repetition rules stay at baseline.
+- Changing model closes the camera tracker and clears calibration/measurement state. Selection is locked during sets and disabled for guided static quads.
+- Verification: Rehab production build and typecheck passed. The focused virtual-camera browser tests passed with the actual Lite, Full and Heavy weights; each model loaded, then switched off with the camera stopped and calibration cleared. These tests do not establish physical-device rep-count accuracy.
+- Local phone Site still points to the restored version 1 until this isolated model-only revision is published.

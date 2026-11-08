@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CvChanges, CvContext, CvExerciseConfig, CvExerciseId, CvFeedbackText, CvFinishInput, CvReport, CvSession, CvTiming } from "../../../../packages/contracts/rehab-cv";
 import { usePoseCamera, type CameraFrame } from "@/features/camera/use-pose-camera";
+import { POSE_MODELS, poseModelFor, type PoseModelId } from "@/features/camera/pose-models";
 import { advanceExercise, advanceTiming, completeGuidedHold, createAngleFilter, createExerciseState, createTimingState, defaultEngineConfig, deriveCalibration, evaluateCalibration, filterAngle, invalidateExercise, measurePose, timingSummary, type AttemptOutcome, type CalibrationSample, type EngineConfig, type ExerciseState, type TimingState } from "@/features/exercise";
 import { cvApi, readRecovery, SessionTransport, type MeasurementBody, type Recovery } from "@/features/feedback/session-client";
 import styles from "./cv.module.css";
@@ -31,6 +32,7 @@ export default function Rehab() {
   const [context,setContext] = useState<CvContext|null>(null);
   const [exercise,setExercise] = useState<CvExerciseId>("seated-knee-extension");
   const [side,setSide] = useState<"left"|"right">("left");
+  const [poseModel,setPoseModel] = useState<PoseModelId>("lite");
   const [calibration,setCalibration] = useState<{start:number|null;target:number|null}>({start:null,target:null});
   const [measurement,setMeasurement] = useState(empty);
   const [session,setSession] = useState<CvSession|null>(null);
@@ -113,7 +115,7 @@ export default function Rehab() {
     setMeasurement(empty);setCalibration({start:null,target:null});samples.current=[];filter.current=createAngleFilter();
     setNotice(reason);
     if(run.current&&!run.current.terminal)void finishAction.current("interrupted",reason.includes("hidden")?"backgrounded":reason.includes("model")?"model_error":"tracking_lost");
-  });
+  },poseModel);
 
   useEffect(()=>{
     mounted.current=true;
@@ -147,6 +149,17 @@ export default function Rehab() {
     setNotice(`${which==="start"?"Starting":"Target"} reference captured. These are comfortable demonstration positions, not a prescription.`);
   }
   function selectExercise(id:CvExerciseId) {setExercise(id);setCalibration({start:null,target:null});setMeasurement(empty);samples.current=[];filter.current=createAngleFilter();setFeedback(null);setCaption("Choose your comfortable start and target references.");}
+  function selectPoseModel(value: PoseModelId) {
+    camera.stop();
+    setPoseModel(value);
+    setCalibration({start:null,target:null});
+    setMeasurement(empty);
+    samples.current=[];
+    filter.current=createAngleFilter();
+    setFeedback(null);
+    setError("");
+    setNotice(`${poseModelFor(value).label} model selected. Enable the camera and capture new references.`);
+  }
   async function begin(simulated=false):Promise<Run|null> {
     if(!context || run.current || recovery)return null;
     if(!simulated && !staticQuads && (camera.status!=="tracking" || !measurement.valid || calibration.start===null || calibration.target===null || !deriveCalibration(calibration.start,calibration.target))){setError("Enable tracking and capture two stable, separated reference positions first.");return null;}
@@ -243,6 +256,7 @@ export default function Rehab() {
     </div><div className={styles.sideStack}>
       <section className={styles.panel}><div className={styles.panelHead}><div><h2>Set up your demonstration</h2><p>Comfortable references, never a prescription.</p></div></div><div className={styles.setup}>
         <div className={styles.fieldRow}><label>Exercise<select value={exercise} disabled={running||busy} onChange={e=>selectExercise(e.target.value as CvExerciseId)}>{context?.exercises.map(item=><option key={item.exerciseId} value={item.exerciseId}>{item.label}</option>)}</select></label><label>Working leg<select value={side} disabled={running||busy} onChange={e=>{setSide(e.target.value as "left"|"right");setCalibration({start:null,target:null});samples.current=[];filter.current=createAngleFilter();}}><option value="left">Left</option><option value="right">Right</option></select></label></div>
+        <label>Pose model<select aria-label="Pose model" value={poseModel} disabled={running||busy||staticQuads} onChange={e=>selectPoseModel(e.target.value as PoseModelId)}>{POSE_MODELS.map(model=><option key={model.id} value={model.id}>{model.label}</option>)}</select><small>{poseModelFor(poseModel).description}</small></label>
         <div className={styles.configNote}>{configuration?.description??"Loading exercise references…"}<br/>{configuration?.targetHoldMs?`${configuration.targetHoldMs/1000}-second demonstration hold · ${configuration.targetReps} target repetitions`:""}</div>
         {!staticQuads&&<div><div className={styles.stepLabel}>Capture stable references</div><div className={styles.calibration}><button className={calibration.start!==null?styles.captured:""} disabled={running||camera.status!=="tracking"} onClick={()=>capture("start")}><span>1. Start position</span><strong>{calibration.start===null?"—":`${calibration.start}°`}</strong><small>Hold still for one second</small></button><button className={calibration.target!==null?styles.captured:""} disabled={running||camera.status!=="tracking"} onClick={()=>capture("target")}><span>2. Comfortable target</span><strong>{calibration.target===null?"—":`${calibration.target}°`}</strong><small>Capture, review, then start</small></button></div></div>}
         {!running?<button className={styles.runButton} disabled={!context||busy||!!recovery||(!staticQuads&&!calibrated)} onClick={()=>void begin()}>{busy?"Starting…":"Start set"}</button>:<><div className={styles.progress} role="progressbar" aria-label="Qualifying repetition progress" aria-valuemin={0} aria-valuemax={configuration?.targetReps??10} aria-valuenow={engine.qualifyingReps}><span style={{width:`${Math.min(100,engine.qualifyingReps/(configuration?.targetReps??10)*100)}%`}}/></div><div className={styles.controls}><button className={styles.secondary} disabled={busy||!!run.current?.terminal} onClick={pauseResume}>{paused?"Resume":"Pause"}</button><button disabled={busy} onClick={()=>void finish()}>{busy?"Saving…":run.current?.terminal?"Retry save":"Finish and save"}</button><button className={styles.danger} disabled={busy} onClick={()=>void finish("cancelled","patient_stopped")}>Cancel set</button></div>{staticQuads&&<button disabled={paused||busy} onClick={guidedHold}>{guided?"Confirm this hold":"Start guided hold"}</button>}<button className={styles.outline} disabled={busy} onClick={()=>void finish("interrupted","discomfort_reported")}>Stop for discomfort</button></>}

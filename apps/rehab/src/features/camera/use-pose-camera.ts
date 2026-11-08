@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PoseLandmarker } from "@mediapipe/tasks-vision";
+import { poseModelFor, type PoseModelId } from "./pose-models";
 
 export type CameraLandmark = { x: number; y: number; z: number; visibility?: number; presence?: number };
 export type CameraFrame = {
@@ -16,7 +17,7 @@ type CameraStatus = "off" | "permission" | "loading" | "tracking" | "error";
 
 const connections = [[11,12],[11,23],[12,24],[23,24],[23,25],[24,26],[25,27],[26,28],[27,29],[28,30],[29,31],[30,32]];
 
-export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupted: (reason: string) => void) {
+export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupted: (reason: string) => void, poseModel: PoseModelId = "lite") {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -69,7 +70,7 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
       const { FilesetResolver, PoseLandmarker: Landmarker } = await import("@mediapipe/tasks-vision");
       const files = await FilesetResolver.forVisionTasks("/rehab/mediapipe");
       const create = (delegate: "GPU" | "CPU") => Landmarker.createFromOptions(files, {
-        baseOptions: { modelAssetPath: "/rehab/models/pose_landmarker_lite.task", delegate },
+        baseOptions: { modelAssetPath: poseModelFor(poseModel).assetPath, delegate },
         runningMode: "VIDEO", numPoses: 2,
         minPoseDetectionConfidence: 0.6, minPosePresenceConfidence: 0.6, minTrackingConfidence: 0.6,
       });
@@ -138,7 +139,7 @@ export function usePoseCamera(onFrame: (frame: CameraFrame) => void, onInterrupt
       const message = e instanceof Error ? e.message : "Camera could not start.";
       setError(message);setStatus("error");
     }
-  }, [stop]);
+  }, [stop, poseModel]);
 
   useEffect(() => {
     mounted.current = true;
