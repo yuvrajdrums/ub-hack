@@ -1,0 +1,41 @@
+{
+  "package": "@mediapipe/tasks-vision",
+  "packageVersion": "1.2.2",
+  "model": "pose_landmarker_lite",
+  "modelVersion": "float16/1",
+  "upstreamLicense": "Apache-2.0",
+  "licenseSource": "https://github.com/google-ai-edge/mediapipe/blob/master/LICENSE",
+  "modelSource": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+  "files": [
+    {
+      "path": "models/pose_landmarker_lite.task",
+      "bytes": 5777746,
+      "sha256": "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a",
+      "source": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task"
+    },
+    {
+      "path": "mediapipe/vision_wasm_internal.js",
+      "bytes": 334128,
+      "sha256": "f2b9c17131ea79716ec6bf07b117a087b2749a6f8a1e2f1f2e77a9382092db5b",
+      "source": "@mediapipe/tasks-vision@1.2.2/wasm/vision_wasm_internal.js"
+    },
+    {
+      "path": "mediapipe/vision_wasm_internal.wasm",
+      "bytes": 14603354,
+      "sha256": "f5bd25147ac89d506074293ce2675969b10e827180db95a0d9689c2ed80764ab",
+      "source": "@mediapipe/tasks-vision@1.2.2/wasm/vision_wasm_internal.wasm"
+    },
+    {
+      "path": "mediapipe/vision_wasm_module_internal.js",
+      "bytes": 334166,
+      "sha256": "72fba0ac8a4034ce9d63f68389df1dead52069409ea621688eedf97f01d4362f",
+      "source": "@mediapipe/tasks-vision@1.2.2/wasm/vision_wasm_module_internal.js"
+    },
+    {
+      "path": "mediapipe/vision_wasm_module_internal.wasm",
+      "bytes": 14603372,
+      "sha256": "b8927a2eebfe80dd98a426a210a9e820c8215168c06f3bcf5d4d09080f623db5",
+      "source": "@mediapipe/tasks-vision@1.2.2/wasm/vision_wasm_module_internal.wasm"
+    }
+  ]
+}

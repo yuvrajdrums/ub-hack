@@ -18,9 +18,12 @@
     "typecheck": "tsc -p apps/panda && tsc -p apps/care && tsc -p apps/rehab && tsc -p tsconfig.tests.json",
     "test": "node --import tsx --test tests/*.test.ts",
     "check": "npm run typecheck && npm test",
-    "test:integration": "node scripts/integration.mjs"
+    "test:integration": "node scripts/integration.mjs",
+    "cv:assets": "node scripts/cv-assets.mjs",
+    "test:cv": "node --import tsx --test tests/rehab-cv*.test.ts"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "1.2.2",
     "next": "16.4.5",
     "react": "19.3.1",
     "react-dom": "19.3.1",
